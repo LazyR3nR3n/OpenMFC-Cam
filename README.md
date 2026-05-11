@@ -37,7 +37,7 @@ The enhance stage is hot-swappable via Settings → ONNX Model Path.
 |-------|---------|-------|
 | Real-ESRGAN lite | Default — fast upscaling | Recommended for general use |
 | SwinIR | High-quality restoration | Slower, better detail |
-| NAFNet | Deblurring + denoising | Community swap |
+| NAFNet | Deblurring + denoising | ALternative backend |
 
 Set your `.onnx` file path in Settings and select the execution provider (Auto / OpenCL / DirectML / CPU).
 
