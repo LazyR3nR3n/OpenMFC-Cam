@@ -3,7 +3,10 @@ import config
 import ctypes
 from devices import enumerate_cameras, get_camera_labels
 from enhance import load_model
-
+import sys
+if sys.platform == "win32":
+    import ctypes
+    ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
 
 if os.name == "nt":
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("MoFiCo.OpenMFC.1.0")
