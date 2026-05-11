@@ -1,7 +1,7 @@
 # OpenMFC-Cam
 **Open Multi-Frame Compounding Camera**
 
-A desktop computational photography tool pipeline that takes a burst of frames — either captured live from a webcam/USB camera or loaded manually — and produces a single cleaned, enhanced output image using physics-based noise reduction combined with optional ML enhancement.
+A desktop computational MFNR photography tool pipeline that takes a burst of frames — either captured live from a webcam/USB camera or loaded manually — and produces a single cleaned, enhanced output image using physics-based noise reduction combined with optional ML enhancement.
 
 ---
 
