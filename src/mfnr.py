@@ -38,8 +38,12 @@ def _align_to_reference(
     max_iter: int = 50,
     eps: float = 1e-4,
 ) -> tuple[np.ndarray, float]:
-    ref_gray = cv2.cvtColor(ref, cv2.COLOR_BGR2GRAY).astype(np.float32)
-    src_gray = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    scale = 0.25  # align at 1/4 resolution
+    ref_small = cv2.resize(ref, None, fx=scale, fy=scale)
+    src_small = cv2.resize(src, None, fx=scale, fy=scale)
+
+    ref_gray = cv2.cvtColor(ref_small, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    src_gray = cv2.cvtColor(src_small, cv2.COLOR_BGR2GRAY).astype(np.float32)
 
     # Warp matrix: 2x3 for translation/euclidean, 3x3 for homography
     if motion_model == cv2.MOTION_HOMOGRAPHY:
