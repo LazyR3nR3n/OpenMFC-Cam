@@ -4,7 +4,7 @@
 ![OSI Approved](https://img.shields.io/badge/license-GPLv3-brightgreen?logo=open-source-initiative)
 ![Python](https://img.shields.io/badge/Python-3.10+-yellow)
 ![Platform](https://img.shields.io/badge/Platform-Windows-blue)
-![GitHub release](https://img.shields.io/github/v/release/LazyR3nR3n/OpenMFC-Cam?include_prereleases)
+![GitHub release](https://img.shields.io/github/v/release/LazyR3nR3n/OpenMFC-Cam?include_prereleases&color=Red)
 
 A standalone desktop computational MFNR photography tool that takes a burst of frames — either captured live from a webcam/USB camera or loaded manually — and produces a single cleaned, enhanced output image using physics-based noise reduction combined with optional ML enhancement.
 
