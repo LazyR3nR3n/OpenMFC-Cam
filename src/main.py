@@ -1,34 +1,40 @@
-import os
-import config
 import ctypes
-from devices import enumerate_cameras, get_camera_labels
-from enhance import load_model
-import sys
-import ctypes
-
 ctypes.windll.kernel32.FreeConsole()
 
-if sys.platform == "win32":
-    import ctypes
-    ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
+import os
+import sys
+import config
+from devices import enumerate_cameras, get_camera_labels
+from enhance import load_model
 
 if os.name == "nt":
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("MoFiCo.OpenMFC.1.0")
+
+
+# ─────────────────────────────────────────
+#  Asset path helper
+# ─────────────────────────────────────────
+
+def _asset_path(relative: str) -> str:
+    """Resolve path to bundled asset — works both in dev and PyInstaller exe."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, relative)
+
 
 # ─────────────────────────────────────────
 #  Icon generation (run once)
 # ─────────────────────────────────────────
 
 def ensure_icon() -> None:
-    ico_path = os.path.join("assets", "icon.ico")
-    png_path = os.path.join("assets", "OpenMFC ICON.png")
+    ico_path = _asset_path(os.path.join("assets", "icon.ico"))
+    png_path = _asset_path(os.path.join("assets", "OpenMFC ICON.png"))
     if not os.path.exists(ico_path) and os.path.exists(png_path):
         try:
             from PIL import Image
-            os.makedirs("assets", exist_ok=True)
+            os.makedirs(os.path.dirname(ico_path), exist_ok=True)
             img = Image.open(png_path)
             img.save(ico_path, format="ICO", sizes=[(256, 256), (64, 64), (32, 32), (16, 16)])
-            print("  Icon generated: assets/icon.ico")
+            print("  Icon generated:", ico_path)
         except Exception as e:
             print(f"  Icon generation skipped: {e}")
 
@@ -38,8 +44,6 @@ def ensure_icon() -> None:
 # ─────────────────────────────────────────
 
 def main() -> None:
-    global _onnx_session, _camera_labels
-
     print("OpenMFC starting...")
 
     ensure_icon()
