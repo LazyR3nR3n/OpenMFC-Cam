@@ -1,9 +1,9 @@
 # OpenMFC-Cam
 **Open Multi-Frame Compounding Camera**
 
-![License](https://img.shields.io/badge/License-GPLv3-blue)
+![License](https://img.shields.io/badge/License-GPLv3-green)
 ![Python](https://img.shields.io/badge/Python-3.10+-yellow)
-![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
+![Platform](https://img.shields.io/badge/Platform-Windows-blue)
 
 A standalone desktop computational MFNR photography tool that takes a burst of frames — either captured live from a webcam/USB camera or loaded manually — and produces a single cleaned, enhanced output image using physics-based noise reduction combined with optional ML enhancement.
 
