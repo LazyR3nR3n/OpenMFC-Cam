@@ -35,7 +35,7 @@ def _align_to_reference(
     src: np.ndarray,
     ref: np.ndarray,
     motion_model: int = cv2.MOTION_TRANSLATION,
-    max_iter: int = 200,
+    max_iter: int = 50,
     eps: float = 1e-4,
 ) -> tuple[np.ndarray, float]:
     ref_gray = cv2.cvtColor(ref, cv2.COLOR_BGR2GRAY).astype(np.float32)
