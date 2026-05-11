@@ -66,6 +66,18 @@ No Python installation required.
 
 ---
 
+## System Requirements
+
+| | |
+|---|---|
+| **OS** | Windows 10 / 11 (64-bit) |
+| **Python** | 3.10+ (if running from source) |
+| **RAM** | 4GB minimum, 8GB recommended |
+| **Camera** | Any USB or built-in webcam (Alternatively, Use Open Camera Burst capture mode and add it through input)|
+| **GPU** | Optional — enables OpenCL/DirectML ONNX acceleration |
+
+---
+
 ## License
 
 GPLv3 — see [LICENSE](LICENSE) for full terms.
