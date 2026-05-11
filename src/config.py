@@ -3,14 +3,13 @@
 # ─────────────────────────────────────────
 import os
 
-OUTPUT_PATH: str = os.path.join(os.path.expanduser("~"), "Pictures", "OpenMFC")
 
 
 # Burst settings
 BURST_COUNT: int = 20
 
 # Output
-OUTPUT_PATH: str = "assets/final output/"
+OUTPUT_PATH: str = os.path.join(os.path.expanduser("~"), "Pictures", "OpenMFC")
 OUTPUT_FORMAT: str = "jpg"          # "jpg" | "png"
 OUTPUT_NAMING: str = "timestamp"    # "timestamp" | "sequential"
 
