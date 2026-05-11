@@ -66,14 +66,14 @@ def run_pipeline(
         filename = f"openmfc_{len(existing):04d}.{suffix}"
 
     final_path = out_path / filename
-    cv2.imwrite(str(final_path), final)
+    final_to_save = np.clip(final, 0, 255).astype(np.uint8)
+    cv2.imwrite(str(final_path), final_to_save)
     log_fn(f"[pipeline] Saved → {final_path}")
 
     if on_done_fn:
         on_done_fn()
 
     log_fn("[pipeline] Done.")
-
 
 def run_pipeline_thread(
     image_paths: list[str],

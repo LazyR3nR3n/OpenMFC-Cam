@@ -47,7 +47,7 @@ def _align_to_reference(
     else:
         warp_matrix = np.eye(2, 3, dtype=np.float32)
 
-    criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, max_iter, eps)
+    criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 50, 1e-4)
 
     try:
         ecc_score, warp_matrix = cv2.findTransformECC(

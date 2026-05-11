@@ -1,3 +1,6 @@
+import os
+os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
+
 import ctypes
 ctypes.windll.kernel32.FreeConsole()
 
