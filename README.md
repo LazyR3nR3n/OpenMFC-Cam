@@ -78,6 +78,14 @@ No Python installation required.
 
 ---
 
+## Support
+
+If OpenMFC has been useful to you, consider buying me a coffee!
+
+☕ [Ko-fi — LazyR3nR3n](https://ko-fi.com/lazyr3nr3n)
+
+---
+
 ## License
 
 GPLv3 — see [LICENSE](LICENSE) for full terms.
