@@ -76,3 +76,10 @@ This program comes with ABSOLUTELY NO WARRANTY.
 This is free software, and you are welcome to redistribute it
 under certain conditions; see LICENSE for details.
 ```
+
+
+Issues: 
+
+If you can't find the output just go to this folder:C:\Users\Admin\Downloads\OpenMFC-alphaVer\assets\final output\ 
+
+This should point you towards the output folder
