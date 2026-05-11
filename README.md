@@ -76,10 +76,3 @@ This program comes with ABSOLUTELY NO WARRANTY.
 This is free software, and you are welcome to redistribute it
 under certain conditions; see LICENSE for details.
 ```
-
----
-
-## Part of MoFi Co.
-
-OpenMFC-Cam is the first product in the MoFi Co. open-source pipeline.  
-Core: GPLv3 · Commercial licensing available for OEM use.
