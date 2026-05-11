@@ -13,7 +13,7 @@ A desktop computational photography pipeline that takes a burst of frames — ei
 2. **ECC Alignment** — aligns frames using Enhanced Correlation Coefficient to reject motion-blurred or misaligned frames
 3. **MFNR** — edge-aware weighted averaging across aligned frames to suppress noise while preserving detail
 4. **HDR Fusion** — Mertens exposure fusion on the denoised output for highlight/shadow recovery (Auto / Enable / Disable)
-5. **ONNX Enhancement** — optional ML upscaling/enhancement via ONNX Runtime (default: Real-ESRGAN lite; community-swappable)
+5. **ONNX Enhancement** — optional ML upscaling/enhancement via ONNX Runtime (default: Real-ESRGAN lite; and other alternatives.)
 
 ---
 
