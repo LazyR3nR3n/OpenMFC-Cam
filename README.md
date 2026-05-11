@@ -9,7 +9,7 @@ A desktop computational photography pipeline that takes a burst of frames — ei
 
 **MFNRC (Multi-Frame Noise Reduction Compounding)** is the core algorithm:
 
-1. **Burst Capture** — captures multiple frames from a live camera or accepts manually loaded JPEGs
+1. **Burst Capture** — captures multiple frames from a live camera or accepts manually loaded JPEGs (Note: The live camera field with live Camera input are untested as of current release)
 2. **ECC Alignment** — aligns frames using Enhanced Correlation Coefficient to reject motion-blurred or misaligned frames
 3. **MFNR** — edge-aware weighted averaging across aligned frames to suppress noise while preserving detail
 4. **HDR Fusion** — Mertens exposure fusion on the denoised output for highlight/shadow recovery (Auto / Enable / Disable)
