@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+venv/
+.venv/
+
+# Build output
+dist/
+build/
+*.spec
+*.exe
+
+# ONNX models (too large for git)
+*.onnx
+
+# Output images (user-generated, not source)
+assets/final output/
+
+# DearPyGui cache
+dpg.ini
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# VS Code
+.vscode/
