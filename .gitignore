@@ -10,7 +10,6 @@ venv/
 # Build output
 dist/
 build/
-*.spec
 *.exe
 
 # ONNX models (too large for git)
