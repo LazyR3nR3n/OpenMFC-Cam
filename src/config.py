@@ -1,6 +1,10 @@
 # ─────────────────────────────────────────
 #  OpenMFC — Configuration
 # ─────────────────────────────────────────
+import os
+
+OUTPUT_PATH: str = os.path.join(os.path.expanduser("~"), "Pictures", "OpenMFC")
+
 
 # Burst settings
 BURST_COUNT: int = 20
