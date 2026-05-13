@@ -70,6 +70,16 @@ Pre-built Windows executable available under [Releases](https://github.com/LazyR
 No Python installation required.
 
 ---
+**Alpha Limitations**
+
+---
+
+**⚠️ Alpha Notice**
+A terminal window will appear on startup — this is expected behavior for DearPyGui applications in Alpha builds and will be removed in future releases. OpenMFC is fully open source under GPLv3, feel free to inspect every line of code before running it.
+
+---
+
+
 
 ## System Requirements
 
