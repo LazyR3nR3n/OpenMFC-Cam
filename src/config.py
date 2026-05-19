@@ -19,6 +19,8 @@ ECC_THRESHOLD: float = 0.3          # frames below this ECC score are dropped
 # Processing — HDR
 ENABLE_HDR: bool = False
 HDR_MODE: str = "auto"              # "auto" | "enable" | "disable"
+HDR_EV_BRACKET: str = "±1"         # "±1" | "±2" | "±3" | "Custom"
+HDR_FUSION_WEIGHT: float = 0.5     # 0.0 = bias shadows, 1.0 = bias highlights
 
 # Processing — ONNX Enhancement
 ENABLE_ONNX: bool = False           # keep False until model is present
@@ -30,4 +32,3 @@ CAPTURE_DEVICE: int = 0             # updated at runtime by devices.enumerate_ca
 CAPTURE_WIDTH: int = 1280
 CAPTURE_HEIGHT: int = 720
 CAPTURE_FPS: int = 30
-

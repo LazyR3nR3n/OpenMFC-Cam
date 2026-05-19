@@ -2,12 +2,9 @@ import os
 os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
 
 import ctypes
-ctypes.windll.kernel32.FreeConsole()
-
 import os
 import sys
 import config
-from devices import enumerate_cameras, get_camera_labels
 from enhance import load_model
 
 if os.name == "nt":
@@ -51,21 +48,15 @@ def main() -> None:
 
     ensure_icon()
 
-    print("Detecting cameras...")
-    cameras = enumerate_cameras()
-    camera_labels = get_camera_labels()
-    if cameras:
-        config.CAPTURE_DEVICE = cameras[0]["index"]
-        print(f"  Found {len(cameras)} camera(s). Using: {cameras[0]['name']}")
-    else:
-        print("  No cameras found. Defaulting to index 0.")
-
     onnx_session = None
     if config.ENABLE_ONNX:
         onnx_session = load_model(config.ONNX_MODEL_PATH)
 
+    # Open the window immediately with no camera list — enumeration runs
+    # in a background thread after the UI is up to avoid the startup spike
+    # from probing up to 10 VideoCapture indices synchronously.
     from ui import build_ui
-    build_ui(onnx_session=onnx_session, camera_labels=camera_labels)
+    build_ui(onnx_session=onnx_session, camera_labels=None)
 
 
 if __name__ == "__main__":

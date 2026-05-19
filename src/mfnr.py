@@ -5,16 +5,77 @@ from pathlib import Path
 from config import OUTPUT_PATH
 
 
-#Loading
+try:
+    import rawpy
+    _RAWPY_AVAILABLE = True
+except ImportError:
+    _RAWPY_AVAILABLE = False
+
+
+# ── Format routing ─────────────────────────────────────────────────────────────
+
+_RAW_EXTENSIONS  = {".dng", ".cr2", ".cr3", ".nef", ".arw", ".orf", ".rw2", ".raf"}
+_WEBP_EXTENSIONS = {".webp"}
+
+def _load_single(path: str) -> np.ndarray | None:
+    """
+    Load one image file to a uint8 BGR ndarray.
+    Routes DNG/RAW through rawpy, WebP explicitly through cv2.imdecode
+    (avoids the OpenCV IMREAD_COLOR flag skipping transparency on some builds),
+    everything else through cv2.imread.
+    """
+    ext = Path(path).suffix.lower()
+
+    if ext in _RAW_EXTENSIONS:
+        if not _RAWPY_AVAILABLE:
+            print(f"[warn] rawpy unavailable — skipping RAW file: {path}")
+            return None
+        try:
+            with rawpy.imread(path) as raw:
+                rgb = raw.postprocess(
+                    use_camera_wb=True,
+                    half_size=False,
+                    no_auto_bright=False,
+                    output_bps=8,
+                )
+            return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+        except Exception as e:
+            print(f"[warn] rawpy failed on {path}: {e}")
+            return None
+
+    if ext in _WEBP_EXTENSIONS:
+        # cv2.imread handles WebP fine on modern builds, but imdecode is safer
+        # cross-platform and avoids Unicode path issues on Windows.
+        try:
+            data = np.fromfile(path, dtype=np.uint8)
+            img  = cv2.imdecode(data, cv2.IMREAD_COLOR)
+            if img is None:
+                print(f"[warn] imdecode returned None for WebP: {path}")
+            return img
+        except Exception as e:
+            print(f"[warn] WebP load failed for {path}: {e}")
+            return None
+
+    # Standard path — also uses fromfile to handle Unicode paths on Windows
+    try:
+        data = np.fromfile(path, dtype=np.uint8)
+        img  = cv2.imdecode(data, cv2.IMREAD_COLOR)
+        if img is None:
+            print(f"[warn] Could not decode: {path}")
+        return img
+    except Exception as e:
+        print(f"[warn] Load failed for {path}: {e}")
+        return None
+
+
+# ── Loading ────────────────────────────────────────────────────────────────────
 
 def load_burst(image_paths: list[str]) -> list[np.ndarray]:
     images = []
     for path in image_paths:
-        img = cv2.imread(path)
+        img = _load_single(path)
         if img is not None:
             images.append(img)
-        else:
-            print(f"[warn] Could not read: {path}")
     return images
 
 

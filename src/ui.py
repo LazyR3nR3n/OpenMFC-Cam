@@ -3,952 +3,1451 @@ import threading
 import time
 import config
 import numpy as np
-import dearpygui.dearpygui as dpg
 from pathlib import Path
-from tkinter import filedialog
-import tkinter as tk
+
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
+    QLabel, QPushButton, QSlider, QComboBox, QRadioButton,
+    QButtonGroup, QFrame, QSizePolicy, QFileDialog, QScrollArea,
+    QTextEdit, QSpinBox, QDialog, QGridLayout, QLineEdit, QProgressBar,
+)
+from PyQt6.QtCore import Qt, QSize, QTimer, QObject, pyqtSignal, QMutex, QMutexLocker, QPoint, QRect
+from PyQt6.QtGui import QFont, QPixmap, QImage, QPainter, QPen, QColor, QBrush, QIcon
 
 from devices import get_index_from_label
-from pipeline import (
-    run_pipeline_thread,
-    capture_burst,
-    preview_loop,
-)
+from pipeline import run_pipeline_thread, capture_burst, preview_loop
 
 
 # ─────────────────────────────────────────
-#  Layout constants
+#  Stylesheet
 # ─────────────────────────────────────────
 
-LEFT_W   = 224
-RIGHT_W  = 218          # slightly wider so cards don't clip
-TOPBAR_H = 34
-HIST_H   = 60
-LOG_H    = 124          # bumped from 112 → gives buttons room to breathe
-GAP      = 2
+APP_STYLE = """
+QWidget {
+    background-color: #1a1a1a;
+    color: #e8e8e6;
+    font-family: "JetBrains Mono", "Courier New", monospace;
+    font-size: 9pt;
+}
+QMainWindow { background-color: #161616; }
 
-# Right-panel card heights — no longer used (collapsing headers are content-sized)
+QPushButton {
+    background: #303030;
+    border: 1px solid #505050;
+    color: #c8c8c4;
+    padding: 4px 10px;
+    border-radius: 2px;
+    letter-spacing: 1px;
+    font-size: 8pt;
+    min-height: 22px;
+}
+QPushButton:hover  { background: #3a3a3a; color: #f0f0ec; border-color: #c8c8c4; }
+QPushButton:pressed { background: #282828; }
+QPushButton:disabled { color: #444440; border-color: #303030; }
 
+QPushButton#btn_start_live {
+    background: #303030; border: 1px solid #505050; color: #f0f0ec;
+}
+QPushButton#btn_start_mfnr {
+    background: #303030; border: 1px solid #585854; color: #c8c8c4;
+}
+QPushButton#btn_start_live:hover,
+QPushButton#btn_start_mfnr:hover {
+    background: #c8c8c4; color: #111; border-color: #c8c8c4;
+}
 
-# ─────────────────────────────────────────
-#  Geometry helper
-# ─────────────────────────────────────────
+QPushButton#titlebar_btn {
+    background: none; border: none; color: #666662;
+    padding: 2px 10px; font-size: 8pt; letter-spacing: 2px;
+    min-height: 24px; border-radius: 0;
+}
+QPushButton#titlebar_btn:hover { background: #2a2a2a; color: #c8c8c4; }
 
-def _geometry(vp_w: int, vp_h: int) -> dict:
-    body_h   = max(300, vp_h - TOPBAR_H - 8)
-    center_w = max(300, vp_w - LEFT_W - RIGHT_W - 12)
+QPushButton#ev_pill {
+    background: #1a1a1a; border: 1px solid #3a3a3a;
+    color: #666662; padding: 2px 6px;
+    font-size: 8pt; letter-spacing: 0; min-height: 18px;
+}
+QPushButton#ev_pill:checked {
+    background: #323232; border-color: #c8c8c4; color: #f0f0ec;
+}
 
-    # OVERHEAD accounts for all real pixel costs DPG consumes inside center_col:
-    #   center_col window padding (12), hist_panel border+padding (~10),
-    #   vf_panel border+padding (~10), log_panel border+padding (~10), GAP*3 spacers
-    OVERHEAD     = HIST_H + LOG_H + GAP * 3 + 42
-    avail_for_vf = max(80, body_h - OVERHEAD)
-    vf_h         = _vf_target_h(center_w, avail_for_vf)
+QSlider::groove:horizontal {
+    height: 2px; background: #3a3a3a; border-radius: 1px;
+}
+QSlider::handle:horizontal {
+    background: #c8c8c4; width: 10px; height: 10px;
+    margin: -4px 0; border-radius: 5px;
+}
+QSlider::sub-page:horizontal { background: #7a7a76; border-radius: 1px; }
 
-    left_top = max(120, body_h // 2 - GAP)
-    left_bot = max(120, body_h - left_top - GAP)
-    return dict(body_h=body_h, center_w=center_w, vf_h=vf_h,
-                left_top=left_top, left_bot=left_bot)
+QRadioButton { color: #9a9a96; spacing: 5px; font-size: 8pt; }
+QRadioButton::indicator {
+    width: 8px; height: 8px; border-radius: 4px;
+    border: 1px solid #505050; background: transparent;
+}
+QRadioButton::indicator:checked { background: #c8c8c4; border-color: #c8c8c4; }
 
+QComboBox {
+    background: #1a1a1a; border: 1px solid #3a3a3a;
+    color: #9a9a96; padding: 2px 5px; border-radius: 2px; font-size: 8pt;
+}
+QComboBox::drop-down { border: none; width: 16px; }
+QComboBox QAbstractItemView {
+    background: #212121; border: 1px solid #3a3a3a;
+    color: #9a9a96; selection-background-color: #2a2a2a;
+}
 
-def _vf_target_h(center_w: int, max_h: int) -> int:
-    ratios = {"16:9": 9/16, "4:3": 3/4, "1:1": 1.0}
-    if _vf_aspect in ratios:
-        return max(80, min(max_h, int((center_w - 18) * ratios[_vf_aspect])))
-    return max(80, max_h)   # Free
+QLineEdit, QTextEdit {
+    background: #0e0e0e; border: 1px solid #3a3a3a;
+    color: #9a9a96; padding: 3px 5px; border-radius: 2px; font-size: 8pt;
+}
 
+QSpinBox {
+    background: #1a1a1a; border: 1px solid #3a3a3a;
+    color: #c8c8c4; padding: 2px 4px; border-radius: 2px; font-size: 9pt;
+}
+QSpinBox::up-button, QSpinBox::down-button { background: #2a2a2a; border: none; width: 16px; }
 
-# ─────────────────────────────────────────
-#  Global state
-# ─────────────────────────────────────────
+QScrollBar:vertical { background: #1a1a1a; width: 6px; margin: 0; }
+QScrollBar::handle:vertical { background: #3a3a3a; border-radius: 3px; min-height: 20px; }
+QScrollBar::handle:vertical:hover { background: #505050; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 
-_onnx_session     = None
-_camera_labels:   list[str] = []
-_input_paths:     list[str] = []
-_preview_running  = False
-_preview_thread   = None
-_live_view_active = False
-
-# Thread-safe frame buffer
-_pending_frame:      np.ndarray | None = None
-_pending_frame_lock: threading.Lock    = threading.Lock()
-_frame_dirty:        bool              = False
-_last_flush_time:    float             = 0.0
-_FLUSH_INTERVAL:     float             = 1 / 30
-
-# "Static" image shown in viewfinder when camera is off
-# Set by: pipeline completion, thumbnail click, open-output-file
-_static_frame:      np.ndarray | None = None
-_static_dirty:      bool              = False
-
-_vf_aspect: str = "Free"
-
-# Track thumbnail tags so we can wire click callbacks
-_thumb_tags: list[str] = []
-
-
-# ─────────────────────────────────────────
-#  Viewport resize
-# ─────────────────────────────────────────
-
-def _on_viewport_resize(sender, app_data) -> None:
-    vp_w = dpg.get_viewport_width()
-    vp_h = dpg.get_viewport_height()
-    g    = _geometry(vp_w, vp_h)
-    try:
-        dpg.set_item_width ("main_window",     vp_w)
-        dpg.set_item_height("main_window",     vp_h)
-        dpg.set_item_height("left_top",        g["left_top"])
-        dpg.set_item_height("left_bot",        g["left_bot"])
-        dpg.set_item_height("project_gallery", max(40, g["left_top"] - 94))
-        dpg.set_item_height("input_file_box",  max(40, g["left_bot"] - 74))
-        dpg.set_item_width ("center_col",      g["center_w"])
-        dpg.set_item_height("center_col",      g["body_h"])
-        dpg.set_item_width ("hist_panel",      g["center_w"] - 2)
-        dpg.set_item_width ("hist_draw",       g["center_w"] - 20)
-        dpg.configure_item ("hist_draw",       width=g["center_w"] - 20)
-        dpg.set_item_height("vf_panel",        g["vf_h"])
-        dpg.set_item_width ("vf_panel",        g["center_w"] - 2)
-        dpg.set_item_width ("vf_image",        g["center_w"] - 18)
-        dpg.set_item_height("vf_image",        g["vf_h"] - 10)
-        dpg.set_item_width ("log_panel",       g["center_w"] - 152)
-        dpg.set_item_height("log_panel",       LOG_H)   # pin log height on resize
-        dpg.set_item_height("btn_panel",       LOG_H)   # pin btn height on resize
-        # right_panel height is not clamped — scrolls if cards overflow
-        # title spacer
-        BTN_END = 184
-        TITLE_W = 38 * 7
-        sw = max(4, LEFT_W + g["center_w"] // 2 - BTN_END - TITLE_W // 2)
-        dpg.set_item_width("title_spacer", sw)
-    except Exception:
-        pass
+QFrame[frameShape="4"], QFrame[frameShape="5"] { color: #3a3a3a; }
+QDialog { background: #1e1e1e; }
+"""
 
 
 # ─────────────────────────────────────────
-#  Theme
+#  Helpers
 # ─────────────────────────────────────────
 
-def _apply_theme(mode: str = "dark") -> None:
-    if mode == "auto":
-        import platform
-        if platform.system() == "Windows":
-            try:
-                import winreg
-                k = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                    r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
-                v, _ = winreg.QueryValueEx(k, "AppsUseLightTheme")
-                mode = "light" if v == 1 else "dark"
-            except Exception:
-                mode = "dark"
-        else:
-            mode = "dark"
+def _h_rule() -> QFrame:
+    f = QFrame()
+    f.setFrameShape(QFrame.Shape.HLine)
+    f.setFrameShadow(QFrame.Shadow.Plain)
+    f.setStyleSheet("color: #3a3a3a;")
+    return f
 
-    with dpg.theme() as app_theme:
-        with dpg.theme_component(dpg.mvAll):
-            if mode == "dark":
-                dpg.add_theme_color(dpg.mvThemeCol_WindowBg,       (22,  22,  22))
-                dpg.add_theme_color(dpg.mvThemeCol_ChildBg,         (32,  32,  32))
-                dpg.add_theme_color(dpg.mvThemeCol_FrameBg,         (18,  18,  18))
-                dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered,  (50,  50,  50))
-                dpg.add_theme_color(dpg.mvThemeCol_Button,          (52,  52,  52))
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered,   (70,  70,  70))
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive,    (95,  95,  95))
-                dpg.add_theme_color(dpg.mvThemeCol_Header,          (50,  50,  50))
-                dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered,   (68,  68,  68))
-                dpg.add_theme_color(dpg.mvThemeCol_Text,            (228, 226, 220))
-                dpg.add_theme_color(dpg.mvThemeCol_TextDisabled,    (110, 110, 110))
-                dpg.add_theme_color(dpg.mvThemeCol_Border,          (52,  52,  52))
-                dpg.add_theme_color(dpg.mvThemeCol_ScrollbarBg,     (18,  18,  18))
-                dpg.add_theme_color(dpg.mvThemeCol_ScrollbarGrab,   (55,  55,  55))
-                dpg.add_theme_color(dpg.mvThemeCol_TitleBg,         (16,  16,  16))
-                dpg.add_theme_color(dpg.mvThemeCol_TitleBgActive,   (22,  22,  22))
-                dpg.add_theme_color(dpg.mvThemeCol_PopupBg,         (28,  28,  28))
-                dpg.add_theme_color(dpg.mvThemeCol_CheckMark,       (200, 200, 200))
-            else:
-                dpg.add_theme_color(dpg.mvThemeCol_WindowBg,       (238, 238, 238))
-                dpg.add_theme_color(dpg.mvThemeCol_ChildBg,         (222, 222, 222))
-                dpg.add_theme_color(dpg.mvThemeCol_FrameBg,         (200, 200, 200))
-                dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered,  (185, 185, 185))
-                dpg.add_theme_color(dpg.mvThemeCol_Button,          (208, 208, 208))
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered,   (188, 188, 188))
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive,    (168, 168, 168))
-                dpg.add_theme_color(dpg.mvThemeCol_Text,            (20,  20,  20))
-                dpg.add_theme_color(dpg.mvThemeCol_TextDisabled,    (130, 130, 130))
-                dpg.add_theme_color(dpg.mvThemeCol_Border,          (178, 178, 178))
-                dpg.add_theme_color(dpg.mvThemeCol_PopupBg,         (232, 232, 232))
-                dpg.add_theme_color(dpg.mvThemeCol_CheckMark,       (60,  60,  60))
 
-            dpg.add_theme_style(dpg.mvStyleVar_WindowRounding,   0)
-            dpg.add_theme_style(dpg.mvStyleVar_ChildRounding,    4)
-            dpg.add_theme_style(dpg.mvStyleVar_FrameRounding,    4)
-            dpg.add_theme_style(dpg.mvStyleVar_GrabRounding,     4)
-            dpg.add_theme_style(dpg.mvStyleVar_PopupRounding,    4)
-            dpg.add_theme_style(dpg.mvStyleVar_ItemSpacing,      8, 4)
-            dpg.add_theme_style(dpg.mvStyleVar_FramePadding,     6, 3)
-            dpg.add_theme_style(dpg.mvStyleVar_WindowPadding,    6, 6)
-            dpg.add_theme_style(dpg.mvStyleVar_ChildBorderSize,  1)
-            dpg.add_theme_style(dpg.mvStyleVar_ScrollbarSize,    8)
+def _muted(text: str) -> QLabel:
+    lbl = QLabel(text)
+    lbl.setStyleSheet("color: #666662; font-size: 8pt;")
+    return lbl
 
-    dpg.bind_theme(app_theme)
-    config.THEME = mode
+
+def _opt_header(text: str) -> QLabel:
+    lbl = QLabel(text.upper())
+    lbl.setStyleSheet(
+        "background: #252525; color: #c8c8c4; letter-spacing: 2px; "
+        "padding: 4px 10px; border-bottom: 1px solid #3a3a3a; "
+        "border-top: 1px solid #3a3a3a; font-size: 8pt; font-weight: bold;"
+    )
+    return lbl
+
+
+def _section_label(text: str) -> QLabel:
+    lbl = QLabel(text.upper())
+    lbl.setStyleSheet(
+        "color: #9a9a96; font-size: 8pt; letter-spacing: 2px; "
+        "background: #2a2a2a; padding: 4px 8px; border-bottom: 1px solid #3a3a3a;"
+    )
+    return lbl
 
 
 # ─────────────────────────────────────────
-#  Logging
+#  Histogram PiP (draggable overlay)
 # ─────────────────────────────────────────
 
-def log(message: str) -> None:
-    try:
-        cur = dpg.get_value("log_box")
-        ts  = time.strftime("%H:%M:%S")
-        dpg.set_value("log_box", cur + f"[{ts}] {message}\n")
-    except Exception:
-        print(message)
+class HistogramPip(QWidget):
+    MODES = ["Luma", "RGB", "All"]
 
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self.setFixedSize(162, 112)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(
+            "background: rgba(14,14,14,220); border: 1px solid #3a3a3a; border-radius: 3px;"
+        )
+        self._mode = "Luma"
+        self._hist_data: dict = {}
+        self._drag_pos: QPoint | None = None
 
-# ─────────────────────────────────────────
-#  Textures
-# ─────────────────────────────────────────
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-_VF_W, _VF_H = 640, 360
+        # Title bar / drag handle
+        bar = QWidget()
+        bar.setFixedHeight(22)
+        bar.setStyleSheet("background: rgba(28,28,28,240); border-bottom: 1px solid #2a2a2a;")
+        bar_l = QHBoxLayout(bar)
+        bar_l.setContentsMargins(6, 0, 4, 0)
+        bar_l.setSpacing(3)
+        title = QLabel("Histogram")
+        title.setStyleSheet("color: #666662; font-size: 7pt; letter-spacing: 2px; background: transparent; border: none;")
+        bar_l.addWidget(title)
+        bar_l.addStretch()
 
-
-def _init_viewfinder_texture() -> None:
-    blank = np.zeros((_VF_H, _VF_W, 4), dtype=np.float32)
-    with dpg.texture_registry():
-        dpg.add_dynamic_texture(_VF_W, _VF_H, blank.ravel(), tag="vf_texture")
-
-
-def _push_frame_to_texture(frame: np.ndarray) -> None:
-    """Push a BGR frame directly into the DPG texture. MUST be called from main thread."""
-    r    = cv2.resize(frame, (_VF_W, _VF_H))
-    rgba = cv2.cvtColor(r, cv2.COLOR_BGR2RGBA).astype(np.float32) / 255.0
-    dpg.set_value("vf_texture", rgba.ravel())
-    _update_histogram(frame)
-
-
-def _frame_to_texture(frame: np.ndarray) -> None:
-    """Called from preview background thread — writes to shared buffer only."""
-    global _pending_frame, _frame_dirty
-    with _pending_frame_lock:
-        _pending_frame = frame.copy()
-        _frame_dirty   = True
-
-
-def _flush_pending_frame() -> None:
-    """Called from main-thread render loop — flushes live camera frames."""
-    global _pending_frame, _frame_dirty, _last_flush_time, _static_dirty, _static_frame
-    now = time.monotonic()
-
-    # Static image takes priority when camera is off
-    if _static_dirty and _static_frame is not None and not _preview_running:
-        _push_frame_to_texture(_static_frame)
-        _static_dirty = False
-        return
-
-    if now - _last_flush_time < _FLUSH_INTERVAL:
-        return
-    with _pending_frame_lock:
-        if not _frame_dirty or _pending_frame is None:
-            return
-        frame        = _pending_frame
-        _frame_dirty = False
-    _last_flush_time = now
-    _push_frame_to_texture(frame)
-
-
-def show_image_in_viewfinder(img: np.ndarray) -> None:
-    """
-    Public entry point — call from pipeline.py or anywhere to display
-    a BGR image in the viewfinder. Safe to call from any thread.
-    """
-    global _static_frame, _static_dirty
-    _static_frame = img.copy()
-    _static_dirty = True
-    _update_histogram(img)
-
-
-def _init_thumbnail_texture(tag: str, img: np.ndarray, w: int = 96, h: int = 72) -> None:
-    r    = cv2.resize(img, (w, h))
-    rgba = cv2.cvtColor(r, cv2.COLOR_BGR2RGBA).astype(np.float32) / 255.0
-    with dpg.texture_registry():
-        if dpg.does_item_exist(tag):
-            dpg.set_value(tag, rgba.ravel())
-        else:
-            dpg.add_dynamic_texture(w, h, rgba.ravel(), tag=tag)
-
-
-# ─────────────────────────────────────────
-#  Histogram
-# ─────────────────────────────────────────
-
-def _update_histogram(frame: np.ndarray) -> None:
-    if not dpg.does_item_exist("hist_draw"):
-        return
-    try:
-        sz = dpg.get_item_configuration("hist_draw")
-        dw = sz.get("width",  600)
-        dh = sz.get("height", 32)
-    except Exception:
-        dw, dh = 600, 32
-
-    dpg.delete_item("hist_draw", children_only=True)
-    dpg.draw_rectangle([0, 0], [dw, dh],
-        fill=(18, 18, 18, 255), color=(0, 0, 0, 0), parent="hist_draw")
-    for frac in (0.25, 0.5, 0.75):
-        x = int(dw * frac)
-        dpg.draw_line([x, 0], [x, dh],
-            color=(255, 255, 255, 20), thickness=1, parent="hist_draw")
-
-    bins  = 64
-    step  = dw / bins
-    chans = [(0, (90,90,255,190)), (1, (80,210,80,190)), (2, (255,80,80,190))]
-    for ch, col in chans:
-        hist = cv2.calcHist([frame], [ch], None, [bins], [0, 256])
-        cv2.normalize(hist, hist, 0, dh - 2, cv2.NORM_MINMAX)
-        flat = hist.flatten()
-        for i in range(bins - 1):
-            dpg.draw_line(
-                [i * step,       dh - flat[i]],
-                [(i + 1) * step, dh - flat[i + 1]],
-                color=col, thickness=1, parent="hist_draw")
-
-
-# ─────────────────────────────────────────
-#  Project gallery
-# ─────────────────────────────────────────
-
-def _on_thumbnail_click(sender, app_data, user_data) -> None:
-    """Load the clicked output image into the viewfinder."""
-    path = user_data
-    img  = cv2.imread(str(path))
-    if img is not None:
-        show_image_in_viewfinder(img)
-        log(f"[preview] Loaded: {Path(path).name}")
-    else:
-        log(f"[preview] Could not read: {path}")
-
-
-def _refresh_project_folder() -> None:
-    global _thumb_tags
-    folder = Path(config.OUTPUT_PATH)
-    if not folder.exists():
-        return
-    dpg.delete_item("project_gallery", children_only=True)
-    _thumb_tags = []
-
-    exts   = {".jpg", ".jpeg", ".png"}
-    images = sorted(
-        [f for f in folder.iterdir() if f.suffix.lower() in exts],
-        key=lambda f: f.stat().st_mtime, reverse=True,
-    )[:20]
-
-    if not images:
-        dpg.add_text("No outputs yet.", color=(90, 90, 90), parent="project_gallery")
-        return
-
-    for i, p in enumerate(images):
-        img = cv2.imread(str(p))
-        if img is None:
-            continue
-        tag = f"thumb_tex_{i}"
-        _thumb_tags.append(tag)
-        _init_thumbnail_texture(tag, img)
-
-        with dpg.group(parent="project_gallery", horizontal=False):
-            # Clickable image button — user_data carries the file path
-            dpg.add_image_button(
-                tag,
-                width=96, height=72,
-                tag=f"thumb_btn_{i}",
-                callback=_on_thumbnail_click,
-                user_data=str(p),
+        self._mode_btns: list[QPushButton] = []
+        for m in self.MODES:
+            btn = QPushButton(m)
+            btn.setCheckable(True)
+            btn.setFixedHeight(16)
+            btn.setStyleSheet(
+                "QPushButton { background: transparent; border: 1px solid #3a3a3a; "
+                "color: #666662; font-size: 7pt; padding: 0 4px; border-radius: 1px; "
+                "letter-spacing: 0; min-height: 0; } "
+                "QPushButton:checked { border-color: #9a9a96; color: #c8c8c4; } "
+                "QPushButton:hover   { color: #9a9a96; }"
             )
-            dpg.add_text(p.name[:14], color=(130, 130, 130))
-        dpg.add_spacer(height=4, parent="project_gallery")
+            btn.clicked.connect(lambda _, mode=m: self._set_mode(mode))
+            bar_l.addWidget(btn)
+            self._mode_btns.append(btn)
+        self._mode_btns[0].setChecked(True)
+        root.addWidget(bar)
+
+        # Canvas
+        self._canvas = QWidget()
+        self._canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._canvas.setStyleSheet("background: transparent; border: none;")
+        self._canvas.paintEvent = self._paint_histogram  # type: ignore
+        root.addWidget(self._canvas)
+
+        # Axis
+        axis = QWidget()
+        axis.setFixedHeight(14)
+        axis.setStyleSheet("background: transparent; border: none;")
+        ax_l = QHBoxLayout(axis)
+        ax_l.setContentsMargins(6, 0, 6, 2)
+        ax_l.setSpacing(0)
+        for v in ("0", "64", "128", "192", "255"):
+            lbl = QLabel(v)
+            lbl.setStyleSheet("color: #444440; font-size: 6pt; background: transparent; border: none;")
+            ax_l.addWidget(lbl)
+            if v != "255":
+                ax_l.addStretch()
+        root.addWidget(axis)
+
+        # Default position: bottom-right of parent
+        if parent:
+            self.move(parent.width() - self.width() - 10, parent.height() - self.height() - 10)
+
+    def _set_mode(self, mode: str):
+        self._mode = mode
+        for btn in self._mode_btns:
+            btn.setChecked(btn.text() == mode)
+        self._canvas.update()
+
+    def update_frame(self, frame: np.ndarray):
+        bins = 64
+        self._hist_data = {}
+        for ch, key in enumerate(["b", "g", "r"]):
+            h = cv2.calcHist([frame], [ch], None, [bins], [0, 256])
+            cv2.normalize(h, h, 0, 1.0, cv2.NORM_MINMAX)
+            self._hist_data[key] = h.flatten()
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        h = cv2.calcHist([gray], [0], None, [bins], [0, 256])
+        cv2.normalize(h, h, 0, 1.0, cv2.NORM_MINMAX)
+        self._hist_data["luma"] = h.flatten()
+        self._canvas.update()
+
+    def _paint_histogram(self, event=None):
+        canvas = self._canvas
+        w, h = canvas.width(), canvas.height()
+        painter = QPainter(canvas)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(0, 0, w, h, QColor("#0e0e0e"))
+
+        # Grid
+        pen = QPen(QColor(60, 60, 60, 100))
+        pen.setWidthF(0.5)
+        painter.setPen(pen)
+        for frac in (0.25, 0.5, 0.75):
+            x = int(w * frac)
+            painter.drawLine(x, 0, x, h)
+
+        if not self._hist_data:
+            painter.end()
+            return
+
+        bins = 64
+        step = w / bins
+
+        def draw_filled(data, color: QColor, alpha: int = 180):
+            from PyQt6.QtCore import QPointF
+            color.setAlpha(alpha)
+            fill = QColor(color); fill.setAlpha(55)
+            pts = [QPointF(0, h)] + \
+                  [QPointF(i * step, h - data[i] * (h - 2)) for i in range(bins)] + \
+                  [QPointF(w, h)]
+            painter.setBrush(QBrush(fill))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawPolygon(pts)
+            lpen = QPen(color); lpen.setWidthF(1.0)
+            painter.setPen(lpen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            for i in range(bins - 1):
+                painter.drawLine(
+                    int(i * step),     int(h - data[i] * (h - 2)),
+                    int((i+1)*step),   int(h - data[i+1] * (h-2)),
+                )
+
+        mode = self._mode
+        if mode == "Luma" and "luma" in self._hist_data:
+            draw_filled(self._hist_data["luma"], QColor(200, 200, 196))
+        elif mode == "RGB":
+            if "b" in self._hist_data: draw_filled(self._hist_data["b"], QColor(80, 140, 240))
+            if "g" in self._hist_data: draw_filled(self._hist_data["g"], QColor(80, 200, 100))
+            if "r" in self._hist_data: draw_filled(self._hist_data["r"], QColor(220, 80, 80))
+        elif mode == "All":
+            if "b" in self._hist_data: draw_filled(self._hist_data["b"], QColor(80, 140, 240), 110)
+            if "g" in self._hist_data: draw_filled(self._hist_data["g"], QColor(80, 200, 100), 110)
+            if "r" in self._hist_data: draw_filled(self._hist_data["r"], QColor(220, 80, 80), 110)
+            if "luma" in self._hist_data:
+                d = self._hist_data["luma"]
+                lpen = QPen(QColor(200, 200, 196, 210)); lpen.setWidthF(1.2)
+                painter.setPen(lpen); painter.setBrush(Qt.BrushStyle.NoBrush)
+                for i in range(bins - 1):
+                    painter.drawLine(
+                        int(i*step), int(h - d[i]*(h-2)),
+                        int((i+1)*step), int(h - d[i+1]*(h-2)),
+                    )
+        painter.end()
+
+    # Drag
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = e.pos()
+
+    def mouseMoveEvent(self, e):
+        if self._drag_pos is not None and self.parent():
+            delta = e.pos() - self._drag_pos
+            new_pos = self.pos() + delta
+            p = self.parent()
+            new_pos.setX(max(0, min(new_pos.x(), p.width()  - self.width())))
+            new_pos.setY(max(0, min(new_pos.y(), p.height() - self.height())))
+            self.move(new_pos)
+
+    def mouseReleaseEvent(self, e):
+        self._drag_pos = None
 
 
 # ─────────────────────────────────────────
-#  Open output file into viewfinder
+#  Viewfinder
 # ─────────────────────────────────────────
 
-def _on_open_output_file(sender, app_data) -> None:
-    root = tk.Tk(); root.withdraw(); root.attributes("-topmost", True)
-    f = filedialog.askopenfilename(
-        title="Open Output Image",
-        filetypes=[("Images", "*.jpg *.jpeg *.png *.tiff *.tif"), ("All files", "*.*")],
-        initialdir=config.OUTPUT_PATH,
-    )
-    root.destroy()
-    if f:
-        img = cv2.imread(f)
-        if img is not None:
-            show_image_in_viewfinder(img)
-            log(f"[preview] Opened: {Path(f).name}")
-        else:
-            log(f"[preview] Could not read file: {f}")
+_ASPECT_RATIOS: dict[str, tuple[int, int] | None] = {
+    "Free": None,
+    "16:9": (16, 9),
+    "4:3":  (4,  3),
+    "1:1":  (1,  1),
+    "3:2":  (3,  2),
+}
 
 
-# ─────────────────────────────────────────
-#  Camera preview
-# ─────────────────────────────────────────
+class ViewfinderWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumSize(320, 180)
+        self.setStyleSheet("background: #0e0e0e;")
+        self._pixmap: QPixmap | None = None
+        self._aspect: tuple[int, int] | None = None   # None = Free
 
-def _update_capture_btn() -> None:
-    try:
-        dpg.configure_item("live_capture_btn", enabled=_live_view_active)
-    except Exception:
-        pass
+        self.hist_pip = HistogramPip(self)
+        self.hist_pip.raise_()
 
-
-def _start_preview() -> None:
-    global _preview_running, _live_view_active
-    _preview_running  = True
-    _live_view_active = True
-    _update_capture_btn()
-
-    def _set_running(val):
-        global _preview_running, _live_view_active
-        _preview_running  = val
-        if not val:
-            _live_view_active = False
-            _update_capture_btn()
+    def set_aspect(self, ratio_str: str):
+        if ratio_str.startswith("custom:"):
             try:
-                dpg.set_item_label("connect_camera_btn", "Connect Camera")
-                dpg.configure_item("connect_camera_btn", enabled=True)
-            except Exception:
-                pass
+                _, w, h = ratio_str.split(":")
+                self._aspect = (int(w), int(h))
+            except (ValueError, TypeError):
+                self._aspect = None
+        else:
+            self._aspect = _ASPECT_RATIOS.get(ratio_str, None)
+        self.update()
 
-    threading.Thread(
-        target=preview_loop,
-        args=(lambda: _preview_running, _frame_to_texture, log, _set_running),
-        daemon=True,
-    ).start()
-    log("[camera] Live preview started.")
-    try:
-        dpg.set_item_label("connect_camera_btn", "Disconnect")
-        dpg.configure_item("connect_camera_btn", enabled=True)
-    except Exception:
-        pass
-
-
-def _clear_viewfinder() -> None:
-    global _pending_frame, _frame_dirty
-    time.sleep(0.08)
-    with _pending_frame_lock:
-        _pending_frame = None
-        _frame_dirty   = False
-    try:
-        blank = np.zeros((_VF_H, _VF_W, 4), dtype=np.float32)
-        dpg.set_value("vf_texture", blank.ravel())
-    except Exception:
-        pass
+    def _constrained_rect(self) -> QRect:
+        """Return the display rect constrained to the current aspect ratio."""
+        if self._aspect is None:
+            return self.rect()
+        aw, ah = self._aspect
+        w, h = self.width(), self.height()
+        # Fit ratio inside widget
+        if w / h > aw / ah:
+            # Widget is wider than ratio — constrain by height
+            nw = int(h * aw / ah)
+            return QRect((w - nw) // 2, 0, nw, h)
+        else:
+            nh = int(w * ah / aw)
+            return QRect(0, (h - nh) // 2, w, nh)
 
 
-def _stop_preview() -> None:
-    global _preview_running, _live_view_active
-    _preview_running  = False
-    _live_view_active = False
-    _update_capture_btn()
-    log("[camera] Live preview stopped.")
-    threading.Thread(target=_clear_viewfinder, daemon=True).start()
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        pip = self.hist_pip
+        x = min(pip.x(), self.width()  - pip.width())
+        y = min(pip.y(), self.height() - pip.height())
+        pip.move(max(0, x), max(0, y))
 
+    def set_frame(self, frame: np.ndarray):
+        h, w = frame.shape[:2]
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        img = QImage(rgb.data, w, h, rgb.strides[0], QImage.Format.Format_RGB888)
+        self._pixmap = QPixmap.fromImage(img)
+        self.hist_pip.update_frame(frame)
+        self.update()
 
-def _on_connect_camera(sender, app_data) -> None:
-    if _preview_running:
-        _stop_preview()
-        dpg.set_item_label("connect_camera_btn", "Connect Camera")
-    else:
-        dpg.set_item_label("connect_camera_btn", "Connecting…")
-        dpg.configure_item("connect_camera_btn", enabled=False)
-        threading.Thread(target=_start_preview, daemon=True).start()
+    def clear(self):
+        self._pixmap = None
+        self.update()
+
+    def paintEvent(self, e):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor("#0e0e0e"))
+
+        # Grid
+        pen = QPen(QColor(255, 255, 255, 8))
+        pen.setWidthF(0.5)
+        painter.setPen(pen)
+        for x in range(0, self.width(), 30):
+            painter.drawLine(x, 0, x, self.height())
+        for y in range(0, self.height(), 30):
+            painter.drawLine(0, y, self.width(), y)
+
+        if self._pixmap:
+            target = self._constrained_rect()
+            scaled = self._pixmap.scaled(
+                target.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            x = target.x() + (target.width()  - scaled.width())  // 2
+            y = target.y() + (target.height() - scaled.height()) // 2
+            # Darken letterbox bars if aspect is constrained
+            if self._aspect is not None:
+                painter.fillRect(self.rect(), QColor("#0e0e0e"))
+            painter.drawPixmap(x, y, scaled)
+        else:
+            # Corner brackets
+            pen = QPen(QColor("#505050")); pen.setWidthF(1.0)
+            painter.setPen(pen)
+            L = 14
+            for cx, cy, left, top in [
+                (8, 8, True, True),
+                (self.width()-8, 8, False, True),
+                (8, self.height()-8, True, False),
+                (self.width()-8, self.height()-8, False, False),
+            ]:
+                dx = L if left else -L
+                dy = L if top else -L
+                painter.drawLine(cx, cy, cx+dx, cy)
+                painter.drawLine(cx, cy, cx, cy+dy)
+
+            # Crosshair
+            cx, cy = self.width()//2, self.height()//2
+            painter.drawLine(cx, cy-20, cx, cy+20)
+            painter.drawLine(cx-20, cy, cx+20, cy)
+
+            # Label
+            painter.setPen(QColor("#444440"))
+            f = QFont("JetBrains Mono", 8)
+            f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 2)
+            painter.setFont(f)
+            painter.drawText(
+                self.rect(),
+                Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignLeft,
+                "  AWAITING CAMERA OR INPUT",
+            )
+        painter.end()
 
 
 # ─────────────────────────────────────────
-#  Pipeline callbacks
+#  Frame signaler (thread → main)
 # ─────────────────────────────────────────
 
-def _pipeline_done_callback() -> None:
-    """Called by pipeline when processing finishes — refresh gallery."""
-    _refresh_project_folder()
-    # pipeline.py should call show_image_in_viewfinder(result_img) directly
-    # before calling this, so the viewfinder updates with the output.
+class FrameSignaler(QObject):
+    frame_ready      = pyqtSignal(object)
+    clear_view       = pyqtSignal()
+    cameras_ready    = pyqtSignal(list)   # emitted from bg thread when enumeration finishes
+    progress_update  = pyqtSignal(int)    # 0-100, emitted by pipeline thread
 
 
-def _on_live_capture_start(sender, app_data) -> None:
-    if not _live_view_active:
-        log("[capture] No live view — connect camera first.")
-        return
-    paths = capture_burst(log)
-    run_pipeline_thread(paths, _onnx_session, log,
-                        _pipeline_done_callback, show_image_in_viewfinder)
+# ─────────────────────────────────────────
+#  Left panel
+# ─────────────────────────────────────────
+
+class LeftPanel(QWidget):
+    image_selected = pyqtSignal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumWidth(160)
+        self.setMaximumWidth(185)
+        self.setStyleSheet("background: #1e1e1e; border-right: 1px solid #3a3a3a;")
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # Project Folder
+        root.addWidget(_section_label("📁  Project Folder"))
+        fb = QWidget()
+        fl = QVBoxLayout(fb)
+        fl.setContentsMargins(8, 8, 8, 8)
+        fl.setSpacing(6)
+        self.lbl_output_path = QLabel(config.OUTPUT_PATH)
+        self.lbl_output_path.setWordWrap(True)
+        self.lbl_output_path.setStyleSheet(
+            "background: #0e0e0e; border: 1px solid #3a3a3a; color: #666662; "
+            "padding: 5px; font-size: 8pt; border-radius: 2px; min-height: 44px;"
+        )
+        fl.addWidget(self.lbl_output_path)
+        self.btn_change_output = QPushButton("Change Folder")
+        fl.addWidget(self.btn_change_output)
+        root.addWidget(fb)
+        root.addWidget(_h_rule())
+
+        # Gallery
+        self.gallery_scroll = QScrollArea()
+        self.gallery_scroll.setWidgetResizable(True)
+        self.gallery_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.gallery_scroll.setStyleSheet("border: none; background: #1a1a1a;")
+        self.gallery_inner = QWidget()
+        self.gallery_layout = QVBoxLayout(self.gallery_inner)
+        self.gallery_layout.setContentsMargins(6, 6, 6, 6)
+        self.gallery_layout.setSpacing(4)
+        self.gallery_layout.addWidget(_muted("No outputs yet."))
+        self.gallery_layout.addStretch()
+        self.gallery_scroll.setWidget(self.gallery_inner)
+        root.addWidget(self.gallery_scroll, 1)
+
+        btn_refresh = QPushButton("Refresh Gallery")
+        btn_refresh.setStyleSheet("border-radius: 0; border-top: 1px solid #3a3a3a;")
+        btn_refresh.clicked.connect(self.refresh_gallery)
+        root.addWidget(btn_refresh)
+        root.addWidget(_h_rule())
+
+        # Input
+        root.addWidget(_section_label("📷  Input"))
+        ib = QWidget()
+        il = QVBoxLayout(ib)
+        il.setContentsMargins(8, 8, 8, 8)
+        il.setSpacing(6)
+        self.lbl_drop = QLabel("Drop frames here\nor open folder")
+        self.lbl_drop.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_drop.setStyleSheet(
+            "background: #0e0e0e; border: 1px dashed #3a3a3a; color: #666662; "
+            "padding: 10px; font-size: 8pt; border-radius: 2px; min-height: 52px;"
+        )
+        il.addWidget(self.lbl_drop)
+        self.btn_open_folder = QPushButton("Open Folder")
+        il.addWidget(self.btn_open_folder)
+        root.addWidget(ib)
+
+    def refresh_gallery(self):
+        # Clear
+        while self.gallery_layout.count():
+            item = self.gallery_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        folder = Path(config.OUTPUT_PATH)
+        if not folder.exists():
+            self.gallery_layout.addWidget(_muted("Folder not found."))
+            self.gallery_layout.addStretch()
+            return
+
+        exts = {".jpg", ".jpeg", ".png"}
+        images = sorted(
+            [f for f in folder.iterdir() if f.suffix.lower() in exts],
+            key=lambda f: f.stat().st_mtime, reverse=True,
+        )[:20]
+
+        if not images:
+            self.gallery_layout.addWidget(_muted("No outputs yet."))
+            self.gallery_layout.addStretch()
+            return
+
+        for p in images:
+            img = cv2.imread(str(p))
+            if img is None:
+                continue
+            thumb = cv2.resize(img, (148, 84))
+            rgb   = cv2.cvtColor(thumb, cv2.COLOR_BGR2RGB)
+            qi    = QImage(rgb.data, 148, 84, rgb.strides[0], QImage.Format.Format_RGB888)
+            pix   = QPixmap.fromImage(qi)
+
+            btn = QPushButton()
+            btn.setIcon(QIcon(pix))
+            btn.setIconSize(QSize(148, 84))
+            btn.setFixedSize(154, 90)
+            btn.setStyleSheet(
+                "border: 1px solid #3a3a3a; background: #0e0e0e; "
+                "border-radius: 2px; padding: 2px;"
+            )
+            path_str = str(p)
+            btn.clicked.connect(lambda _, ps=path_str: self.image_selected.emit(ps))
+            self.gallery_layout.addWidget(btn)
+            self.gallery_layout.addWidget(_muted(p.name[:18]))
+
+        self.gallery_layout.addStretch()
 
 
-def _on_mfnr_input_start(sender, app_data) -> None:
-    if not _input_paths:
-        log("[input] No images loaded.")
-        return
-    paths = _input_paths[: config.BURST_COUNT]
-    log(f"[input] Running pipeline on {len(paths)} image(s)…")
-    run_pipeline_thread(paths, _onnx_session, log,
-                        _pipeline_done_callback, show_image_in_viewfinder)
+# ─────────────────────────────────────────
+#  Options panel (right rail)
+# ─────────────────────────────────────────
+
+class OptionsPanel(QWidget):
+    ecc_changed        = pyqtSignal(float)
+    hdr_mode_changed   = pyqtSignal(str)
+    ev_bracket_changed = pyqtSignal(str)
+    fusion_changed     = pyqtSignal(float)
+    enhance_changed    = pyqtSignal(str)
+    burst_changed      = pyqtSignal(int)
+    aspect_changed     = pyqtSignal(str)
+    camera_changed     = pyqtSignal(str)
+    connect_camera     = pyqtSignal()
+    open_output        = pyqtSignal()
+
+    def __init__(self, camera_labels: list[str], parent=None):
+        super().__init__(parent)
+        self.setMinimumWidth(190)
+        self.setMaximumWidth(220)
+        self.setStyleSheet("background: #1e1e1e; border-left: 1px solid #3a3a3a;")
+
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("border: none; background: transparent;")
+
+        inner = QWidget()
+        inner.setStyleSheet("background: #1e1e1e;")
+        root = QVBoxLayout(inner)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # Header
+        h = QLabel("OPTIONS")
+        h.setStyleSheet(
+            "background: #161616; color: #666662; letter-spacing: 4px; "
+            "padding: 5px 10px; border-bottom: 1px solid #3a3a3a; font-size: 8pt;"
+        )
+        root.addWidget(h)
+
+        # ── MFNR ──────────────────────────────
+        root.addWidget(_opt_header("MFNR"))
+        mb = QWidget(); ml = QVBoxLayout(mb)
+        ml.setContentsMargins(10, 6, 10, 8); ml.setSpacing(4)
+        ecc_row = QHBoxLayout()
+        ecc_row.addWidget(_muted("ECC Threshold"))
+        self.lbl_ecc = QLabel(f"{config.ECC_THRESHOLD:.1f}")
+        self.lbl_ecc.setStyleSheet("color: #9a9a96; font-size: 8pt;")
+        ecc_row.addStretch(); ecc_row.addWidget(self.lbl_ecc)
+        ml.addLayout(ecc_row)
+        self.sld_ecc = QSlider(Qt.Orientation.Horizontal)
+        self.sld_ecc.setRange(0, 10)
+        self.sld_ecc.setValue(int(config.ECC_THRESHOLD * 10))
+        self.sld_ecc.valueChanged.connect(self._on_ecc)
+        ml.addWidget(self.sld_ecc)
+        root.addWidget(mb); root.addWidget(_h_rule())
+
+        # ── HDR ───────────────────────────────
+        root.addWidget(_opt_header("HDR"))
+        hb = QWidget(); hl = QVBoxLayout(hb)
+        hl.setContentsMargins(10, 6, 10, 8); hl.setSpacing(5)
+
+        self._hdr_grp = QButtonGroup(self)
+        for mode in ("Auto", "Enable", "Disable"):
+            rb = QRadioButton(mode)
+            if mode.lower() == getattr(config, "HDR_MODE", "auto"):
+                rb.setChecked(True)
+            self._hdr_grp.addButton(rb)
+            hl.addWidget(rb)
+        self._hdr_grp.buttonClicked.connect(
+            lambda btn: self.hdr_mode_changed.emit(btn.text())
+        )
+
+        hl.addSpacing(4)
+        hl.addWidget(_muted("EV Bracket"))
+        ev_row = QHBoxLayout(); ev_row.setSpacing(3)
+        self._ev_grp = QButtonGroup(self)
+        self._ev_grp.setExclusive(True)
+        for label in ("±1", "±2", "±3", "Custom"):
+            btn = QPushButton(label)
+            btn.setObjectName("ev_pill")
+            btn.setCheckable(True)
+            if label == "±1":
+                btn.setChecked(True)
+            self._ev_grp.addButton(btn)
+            ev_row.addWidget(btn)
+        self._ev_grp.buttonClicked.connect(
+            lambda btn: self.ev_bracket_changed.emit(btn.text())
+        )
+        hl.addLayout(ev_row)
+
+        hl.addSpacing(3)
+        fw_row = QHBoxLayout()
+        fw_row.addWidget(_muted("Fusion Weight"))
+        self.lbl_fw = QLabel("0.5")
+        self.lbl_fw.setStyleSheet("color: #9a9a96; font-size: 8pt;")
+        fw_row.addStretch(); fw_row.addWidget(self.lbl_fw)
+        hl.addLayout(fw_row)
+        self.sld_fusion = QSlider(Qt.Orientation.Horizontal)
+        self.sld_fusion.setRange(0, 10)
+        self.sld_fusion.setValue(5)
+        self.sld_fusion.valueChanged.connect(self._on_fusion)
+        hl.addWidget(self.sld_fusion)
+        axis_row = QHBoxLayout()
+        axis_row.addWidget(_muted("Shadows"))
+        axis_row.addStretch()
+        axis_row.addWidget(_muted("Highlights"))
+        hl.addLayout(axis_row)
+
+        root.addWidget(hb); root.addWidget(_h_rule())
+
+        # ── Enhance ───────────────────────────
+        root.addWidget(_opt_header("Enhance"))
+        eb = QWidget(); el = QVBoxLayout(eb)
+        el.setContentsMargins(10, 6, 10, 8); el.setSpacing(3)
+        self._enh_grp = QButtonGroup(self)
+        for opt in ("Enable", "Disable"):
+            rb = QRadioButton(opt)
+            enabled = getattr(config, "ENABLE_ONNX", False)
+            if (opt == "Enable" and enabled) or (opt == "Disable" and not enabled):
+                rb.setChecked(True)
+            self._enh_grp.addButton(rb)
+            el.addWidget(rb)
+        self._enh_grp.buttonClicked.connect(
+            lambda btn: self.enhance_changed.emit(btn.text())
+        )
+        root.addWidget(eb); root.addWidget(_h_rule())
+
+        # ── Burst Count ───────────────────────
+        root.addWidget(_opt_header("Burst Count"))
+        bb = QWidget(); bl = QHBoxLayout(bb)
+        bl.setContentsMargins(10, 6, 10, 8); bl.setSpacing(8)
+        self.spin_burst = QSpinBox()
+        self.spin_burst.setRange(1, 64)
+        self.spin_burst.setValue(config.BURST_COUNT)
+        self.spin_burst.setFixedWidth(64)
+        self.spin_burst.valueChanged.connect(self.burst_changed.emit)
+        bl.addWidget(self.spin_burst)
+        bl.addWidget(_muted("frames"))
+        bl.addStretch()
+        root.addWidget(bb); root.addWidget(_h_rule())
+
+        # ── Camera ────────────────────────────
+        root.addWidget(_opt_header("Camera"))
+        cb = QWidget(); cl = QVBoxLayout(cb)
+        cl.setContentsMargins(10, 6, 10, 8); cl.setSpacing(6)
+        self.cmb_camera = QComboBox()
+        self.cmb_camera.addItems(camera_labels if camera_labels else ["No device found"])
+        self.cmb_camera.currentTextChanged.connect(self.camera_changed.emit)
+        cl.addWidget(self.cmb_camera)
+        self.btn_connect = QPushButton("Connect Camera")
+        self.btn_connect.clicked.connect(self.connect_camera.emit)
+        cl.addWidget(self.btn_connect)
+        root.addWidget(cb); root.addWidget(_h_rule())
+
+        # ── Aspect Ratio ──────────────────────
+        root.addWidget(_opt_header("Aspect Ratio"))
+        ab = QWidget(); al = QVBoxLayout(ab)
+        al.setContentsMargins(10, 6, 10, 8); al.setSpacing(3)
+        self._ar_grp = QButtonGroup(self)
+        for ratio in ("Free", "16:9", "4:3", "1:1", "3:2", "Custom"):
+            rb = QRadioButton(ratio)
+            if ratio == "Free":
+                rb.setChecked(True)
+            self._ar_grp.addButton(rb)
+            al.addWidget(rb)
+        self._ar_grp.buttonClicked.connect(self._on_aspect_btn)
+
+        # Custom W:H input — hidden until "Custom" is selected
+        self._custom_ar_row = QWidget()
+        self._custom_ar_row.setVisible(False)
+        cr = QHBoxLayout(self._custom_ar_row)
+        cr.setContentsMargins(0, 2, 0, 0); cr.setSpacing(4)
+        self._sp_ar_w = QSpinBox(); self._sp_ar_w.setRange(1, 9999); self._sp_ar_w.setValue(16)
+        self._sp_ar_w.setFixedWidth(52)
+        cr.addWidget(self._sp_ar_w)
+        cr.addWidget(_muted(":"))
+        self._sp_ar_h = QSpinBox(); self._sp_ar_h.setRange(1, 9999); self._sp_ar_h.setValue(9)
+        self._sp_ar_h.setFixedWidth(52)
+        cr.addWidget(self._sp_ar_h)
+        btn_apply_ar = QPushButton("Apply")
+        btn_apply_ar.setFixedHeight(20)
+        btn_apply_ar.setStyleSheet("font-size: 7pt; padding: 0 4px; min-height: 0;")
+        btn_apply_ar.clicked.connect(self._on_custom_ar_apply)
+        cr.addWidget(btn_apply_ar)
+        al.addWidget(self._custom_ar_row)
+
+        root.addWidget(ab); root.addWidget(_h_rule())
+
+        # ── Open Output ───────────────────────
+        root.addWidget(_opt_header("View Output"))
+        vb = QWidget(); vl = QVBoxLayout(vb)
+        vl.setContentsMargins(10, 6, 10, 8)
+        btn_open = QPushButton("Open Output File")
+        btn_open.clicked.connect(self.open_output.emit)
+        vl.addWidget(btn_open)
+        root.addWidget(vb)
+        root.addStretch()
+
+        scroll.setWidget(inner)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(scroll)
+
+    def _on_ecc(self, val: int):
+        v = round(val / 10, 1)
+        self.lbl_ecc.setText(f"{v:.1f}")
+        self.ecc_changed.emit(v)
+
+    def _on_fusion(self, val: int):
+        v = round(val / 10, 1)
+        self.lbl_fw.setText(f"{v:.1f}")
+        self.fusion_changed.emit(v)
+
+    def _on_aspect_btn(self, btn):
+        label = btn.text()
+        is_custom = label == "Custom"
+        self._custom_ar_row.setVisible(is_custom)
+        if not is_custom:
+            self.aspect_changed.emit(label)
+
+    def _on_custom_ar_apply(self):
+        w = self._sp_ar_w.value()
+        h = self._sp_ar_h.value()
+        self.aspect_changed.emit(f"custom:{w}:{h}")
 
 
-def _on_input_browse(sender, app_data) -> None:
-    global _input_paths
-    root = tk.Tk(); root.withdraw(); root.attributes("-topmost", True)
-    files = filedialog.askopenfilenames(
-        title="Select Burst Images",
-        filetypes=[("Images", "*.jpg *.jpeg *.png *.tiff *.tif"), ("All files", "*.*")],
-    )
-    root.destroy()
-    if files:
-        _input_paths = list(files)
-        dpg.set_value("input_label", f"{len(_input_paths)} file(s) loaded")
-        log(f"[input] Loaded {len(_input_paths)} file(s).")
-        img = cv2.imread(_input_paths[0])
+# ─────────────────────────────────────────
+#  Settings dialog
+# ─────────────────────────────────────────
+
+class SettingsDialog(QDialog):
+    def __init__(self, camera_labels: list[str], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings — OpenMFC")
+        self.setFixedSize(500, 520)
+        self.setStyleSheet(APP_STYLE)
+
+        root = QVBoxLayout(self)
+        root.setSpacing(10)
+        root.setContentsMargins(16, 16, 16, 16)
+
+        def section(txt):
+            lbl = QLabel(txt.upper())
+            lbl.setStyleSheet("color: #9a9a96; font-size: 8pt; letter-spacing: 2px;")
+            root.addWidget(lbl)
+            root.addWidget(_h_rule())
+
+        section("Output")
+        og = QGridLayout(); og.setSpacing(6)
+        og.addWidget(_muted("Folder:"), 0, 0)
+        self.ed_output = QLineEdit(config.OUTPUT_PATH)
+        og.addWidget(self.ed_output, 0, 1)
+        b = QPushButton("Browse"); b.setFixedWidth(70)
+        b.clicked.connect(lambda: self.ed_output.setText(
+            QFileDialog.getExistingDirectory(self, "Output Folder") or self.ed_output.text()
+        ))
+        og.addWidget(b, 0, 2)
+        og.addWidget(_muted("Format:"), 1, 0)
+        self.cmb_format = QComboBox(); self.cmb_format.addItems(["JPG", "PNG"])
+        self.cmb_format.setCurrentText(config.OUTPUT_FORMAT.upper())
+        og.addWidget(self.cmb_format, 1, 1)
+        og.addWidget(_muted("Naming:"), 2, 0)
+        self.cmb_naming = QComboBox(); self.cmb_naming.addItems(["Timestamp", "Sequential"])
+        self.cmb_naming.setCurrentText(config.OUTPUT_NAMING.capitalize())
+        og.addWidget(self.cmb_naming, 2, 1)
+        root.addLayout(og); root.addSpacing(6)
+
+        section("ONNX Model")
+        xg = QGridLayout(); xg.setSpacing(6)
+        xg.addWidget(_muted("Model:"), 0, 0)
+        self.ed_onnx = QLineEdit(config.ONNX_MODEL_PATH)
+        xg.addWidget(self.ed_onnx, 0, 1)
+        bx = QPushButton("Browse"); bx.setFixedWidth(70)
+        bx.clicked.connect(lambda: self._browse_onnx())
+        xg.addWidget(bx, 0, 2)
+        xg.addWidget(_muted("Provider:"), 1, 0)
+        self.cmb_provider = QComboBox()
+        self.cmb_provider.addItems(["Auto", "OpenCL", "DirectML", "CPU"])
+        self.cmb_provider.setCurrentText(
+            getattr(config, "ONNX_EXECUTION_PROVIDER", "auto").capitalize()
+        )
+        xg.addWidget(self.cmb_provider, 1, 1)
+        root.addLayout(xg); root.addSpacing(6)
+
+        section("Capture Device")
+        cg = QGridLayout(); cg.setSpacing(6)
+        cg.addWidget(_muted("Device:"), 0, 0)
+        self.cmb_cam = QComboBox()
+        self.cmb_cam.addItems(camera_labels if camera_labels else ["No cameras found"])
+        cg.addWidget(self.cmb_cam, 0, 1, 1, 2)
+        for row, (lbl, attr, lo, hi) in enumerate([
+            ("Width:", "CAPTURE_WIDTH", 320, 3840),
+            ("Height:", "CAPTURE_HEIGHT", 240, 2160),
+            ("FPS:", "CAPTURE_FPS", 1, 120),
+        ], start=1):
+            cg.addWidget(_muted(lbl), row, 0)
+            sp = QSpinBox(); sp.setRange(lo, hi); sp.setValue(getattr(config, attr))
+            setattr(self, f"sp_{attr.lower()}", sp)
+            cg.addWidget(sp, row, 1)
+        root.addLayout(cg)
+
+        root.addStretch()
+        root.addWidget(_h_rule())
+        root.addSpacing(6)
+        btn_row = QHBoxLayout()
+        btn_save = QPushButton("Save"); btn_save.setFixedHeight(30)
+        btn_save.clicked.connect(self._save)
+        btn_cancel = QPushButton("Cancel"); btn_cancel.setFixedHeight(30)
+        btn_cancel.clicked.connect(self.reject)
+        btn_row.addWidget(btn_save); btn_row.addSpacing(8)
+        btn_row.addWidget(btn_cancel); btn_row.addStretch()
+        root.addLayout(btn_row)
+
+    def _browse_onnx(self):
+        f, _ = QFileDialog.getOpenFileName(self, "Select ONNX Model", "", "ONNX (*.onnx);;All (*.*)")
+        if f:
+            self.ed_onnx.setText(f)
+
+    def _save(self):
+        config.OUTPUT_PATH             = self.ed_output.text()
+        config.OUTPUT_FORMAT           = self.cmb_format.currentText().lower()
+        config.OUTPUT_NAMING           = self.cmb_naming.currentText().lower()
+        config.ONNX_MODEL_PATH         = self.ed_onnx.text()
+        config.ONNX_EXECUTION_PROVIDER = self.cmb_provider.currentText().lower()
+        config.CAPTURE_DEVICE          = get_index_from_label(self.cmb_cam.currentText())
+        config.CAPTURE_WIDTH           = self.sp_capture_width.value()
+        config.CAPTURE_HEIGHT          = self.sp_capture_height.value()
+        config.CAPTURE_FPS             = self.sp_capture_fps.value()
+        self.accept()
+
+
+# ─────────────────────────────────────────
+#  Help dialog
+# ─────────────────────────────────────────
+
+class HelpDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Help — OpenMFC")
+        self.setFixedSize(440, 440)
+        self.setStyleSheet(APP_STYLE)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(6)
+
+        title = QLabel("OpenMFC — Open Multi-Frame Compounding")
+        title.setStyleSheet("color: #c8c8c4; font-size: 9pt;")
+        root.addWidget(title)
+        root.addWidget(_h_rule())
+
+        def section(txt):
+            lbl = QLabel(txt.upper())
+            lbl.setStyleSheet("color: #9a9a96; font-size: 8pt; letter-spacing: 2px; margin-top: 6px;")
+            root.addWidget(lbl)
+
+        def item(txt):
+            lbl = QLabel(txt)
+            lbl.setStyleSheet("color: #666662; font-size: 8pt;")
+            lbl.setWordWrap(True)
+            root.addWidget(lbl)
+
+        section("Live Capture")
+        item("1. Press 'Connect Camera' in Options to open the live feed.")
+        item("2. Live Capture → Start unlocks once feed is active.")
+        item("3. Press Start to capture a burst and run the pipeline.")
+
+        section("Manual Input")
+        item("1. Click Open Folder (left panel) to load burst images.")
+        item("2. Press MFNR Start to process the loaded frames.")
+
+        section("Viewfinder")
+        item("Shows: live camera feed, pipeline output, or any loaded image.")
+        item("Click any thumbnail in Project Folder to preview it.")
+
+        section("Histogram PiP")
+        item("Draggable overlay on the viewfinder. Switch: Luma / RGB / All.")
+        item("Updates live from camera, pipeline result, or file load.")
+
+        section("Options")
+        item("ECC Threshold — frame rejection sensitivity for alignment.")
+        item("EV Bracket — exposure stop spread for Mertens HDR fusion.")
+        item("Fusion Weight — bias shadows or highlights in the HDR merge.")
+        item("Enhance — ONNX model required (set path in Settings).")
+
+        root.addStretch()
+        root.addWidget(_h_rule())
+        root.addSpacing(6)
+        btn = QPushButton("Close"); btn.setFixedWidth(100)
+        btn.clicked.connect(self.accept)
+        root.addWidget(btn)
+
+
+# ─────────────────────────────────────────
+#  Main window
+# ─────────────────────────────────────────
+
+class MainWindow(QMainWindow):
+    def __init__(self, onnx_session=None, camera_labels: list[str] = None):
+        super().__init__()
+        self.setWindowTitle("OpenMFC — Multi-Frame Compounding")
+        self.setMinimumSize(980, 580)
+        self.resize(1200, 700)
+        self.setStyleSheet(APP_STYLE)
+
+        self._onnx_session    = onnx_session
+        self._camera_labels   = camera_labels or []
+        self._input_paths:    list[str] = []
+        self._preview_running = False
+        self._live_active     = False
+
+        self._frame_mutex    = QMutex()
+        self._pending_frame: np.ndarray | None = None
+        self._frame_dirty    = False
+
+        self._signaler = FrameSignaler()
+
+        self._build_ui()
+        self._connect_signals()
+
+        # Wire signaler after viewfinder exists
+        self._signaler.frame_ready.connect(self._on_frame_ready)
+        self._signaler.clear_view.connect(self.viewfinder.clear)
+        self._signaler.cameras_ready.connect(self._on_cameras_ready)
+        self._signaler.progress_update.connect(self.progress_bar.setValue)
+
+        self._flush_timer = QTimer(self)
+        self._flush_timer.setInterval(33)   # ~30 fps
+        self._flush_timer.timeout.connect(self._flush_pending_frame)
+        self._flush_timer.start()
+
+        # Enumerate cameras in background — avoids blocking the UI on startup
+        threading.Thread(target=self._enumerate_cameras_bg, daemon=True).start()
+
+    # ─────────────────────────────────────
+    #  UI construction
+    # ─────────────────────────────────────
+
+    def _build_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # Titlebar
+        titlebar = QWidget()
+        titlebar.setFixedHeight(30)
+        titlebar.setStyleSheet("background: #161616; border-bottom: 1px solid #3a3a3a;")
+        tb_l = QHBoxLayout(titlebar)
+        tb_l.setContentsMargins(0, 0, 0, 0)
+        tb_l.setSpacing(0)
+        for label, slot in (("Settings", self._open_settings), ("Help", self._open_help)):
+            btn = QPushButton(label)
+            btn.setObjectName("titlebar_btn")
+            btn.clicked.connect(slot)
+            tb_l.addWidget(btn)
+        tb_l.addStretch()
+        lbl = QLabel("OpenMFC  ·  Open Multi-Frame Compounding")
+        lbl.setStyleSheet("color: #404040; font-size: 9pt; letter-spacing: 3px; background: transparent;")
+        tb_l.addWidget(lbl)
+        tb_l.addStretch()
+        root.addWidget(titlebar)
+
+        # Body
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+
+        # Left
+        self.left_panel = LeftPanel()
+        self.left_panel.btn_change_output.clicked.connect(self._pick_output_folder)
+        self.left_panel.btn_open_folder.clicked.connect(self._pick_input_folder)
+        self.left_panel.image_selected.connect(self._load_image_to_viewfinder)
+        body.addWidget(self.left_panel)
+
+        # Center
+        center = QWidget()
+        center.setStyleSheet("background: #1a1a1a;")
+        center_l = QVBoxLayout(center)
+        center_l.setContentsMargins(0, 0, 0, 0)
+        center_l.setSpacing(0)
+
+        self.viewfinder = ViewfinderWidget()
+        center_l.addWidget(self.viewfinder, 1)
+
+        # Progress bar — sits between viewfinder and log strip
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFixedHeight(4)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background: #1a1a1a;
+                border: none;
+                border-radius: 0;
+            }
+            QProgressBar::chunk {
+                background: #7ab8f5;
+                border-radius: 0;
+            }
+        """)
+        center_l.addWidget(self.progress_bar)
+
+        # Bottom strip
+        bottom = QWidget()
+        bottom.setFixedHeight(90)
+        bottom.setStyleSheet("background: #161616; border-top: 1px solid #3a3a3a;")
+        bot_l = QHBoxLayout(bottom)
+        bot_l.setContentsMargins(0, 0, 0, 0)
+        bot_l.setSpacing(0)
+
+        # Log
+        log_wrap = QWidget()
+        log_wrap.setStyleSheet("background: #0e0e0e;")
+        log_inner = QVBoxLayout(log_wrap)
+        log_inner.setContentsMargins(0, 0, 0, 0)
+        log_inner.setSpacing(0)
+        log_hdr = QLabel("  LOG")
+        log_hdr.setFixedHeight(20)
+        log_hdr.setStyleSheet(
+            "color: #444440; font-size: 7pt; letter-spacing: 2px; "
+            "background: #1a1a1a; padding: 2px 6px; border-bottom: 1px solid #2a2a2a;"
+        )
+        log_inner.addWidget(log_hdr)
+        self.log_box = QTextEdit()
+        self.log_box.setReadOnly(True)
+        self.log_box.setStyleSheet(
+            "background: #0e0e0e; border: none; color: #666662; "
+            "font-size: 8pt; padding: 4px 8px;"
+        )
+        log_inner.addWidget(self.log_box)
+        bot_l.addWidget(log_wrap, 1)
+
+        div = QFrame(); div.setFrameShape(QFrame.Shape.VLine)
+        div.setStyleSheet("color: #3a3a3a;")
+        bot_l.addWidget(div)
+
+        # Capture buttons
+        cap = QWidget(); cap.setFixedWidth(130)
+        cap.setStyleSheet("background: #1e1e1e;")
+        cap_l = QVBoxLayout(cap)
+        cap_l.setContentsMargins(8, 8, 8, 8)
+        cap_l.setSpacing(6)
+
+        live_row = QHBoxLayout()
+        live_row.addWidget(_muted("Live"))
+        self.btn_live = QPushButton("Start")
+        self.btn_live.setObjectName("btn_start_live")
+        self.btn_live.setEnabled(False)
+        self.btn_live.clicked.connect(self._on_live_capture)
+        live_row.addWidget(self.btn_live)
+        cap_l.addLayout(live_row)
+        cap_l.addWidget(_h_rule())
+
+        mfnr_row = QHBoxLayout()
+        mfnr_row.addWidget(_muted("MFNR"))
+        self.btn_mfnr = QPushButton("Start")
+        self.btn_mfnr.setObjectName("btn_start_mfnr")
+        self.btn_mfnr.clicked.connect(self._on_mfnr_start)
+        mfnr_row.addWidget(self.btn_mfnr)
+        cap_l.addLayout(mfnr_row)
+        cap_l.addStretch()
+
+        bot_l.addWidget(cap)
+        center_l.addWidget(bottom)
+        body.addWidget(center, 1)
+
+        # Right
+        self.options = OptionsPanel(self._camera_labels)
+        body.addWidget(self.options)
+
+        root.addLayout(body, 1)
+
+    # ─────────────────────────────────────
+    #  Signal wiring
+    # ─────────────────────────────────────
+
+    def _connect_signals(self):
+        o = self.options
+        o.ecc_changed.connect(lambda v: setattr(config, "ECC_THRESHOLD", round(v, 1)))
+        o.hdr_mode_changed.connect(self._on_hdr_mode)
+        o.ev_bracket_changed.connect(lambda v: setattr(config, "HDR_EV_BRACKET", v))
+        o.fusion_changed.connect(lambda v: setattr(config, "HDR_FUSION_WEIGHT", round(v, 1)))
+        o.enhance_changed.connect(lambda v: setattr(config, "ENABLE_ONNX", v.lower() == "enable"))
+        o.burst_changed.connect(lambda v: setattr(config, "BURST_COUNT", max(1, v)))
+        o.aspect_changed.connect(self._on_aspect_changed)
+        o.camera_changed.connect(lambda v: setattr(config, "CAPTURE_DEVICE", get_index_from_label(v)))
+        o.connect_camera.connect(self._on_connect_camera)
+        o.open_output.connect(self._on_open_output_file)
+
+    # ─────────────────────────────────────
+    #  Logging
+    # ─────────────────────────────────────
+
+    def log(self, message: str) -> None:
+        ts = time.strftime("%H:%M:%S")
+
+        # Color-code by prefix
+        if any(k in message for k in ("[pipeline]", "[mfnr]", "[hdr]", "[enhance]")):
+            color = "#7ab8f5"   # blue — pipeline stages
+        elif "[camera]" in message or "[capture]" in message or "[preview]" in message:
+            color = "#9a9a96"   # grey — camera
+        elif "[output]" in message or "[settings]" in message:
+            color = "#a0c878"   # green — output/settings
+        elif "error" in message.lower() or "abort" in message.lower() or "fail" in message.lower():
+            color = "#e07070"   # red — errors
+        elif "warn" in message.lower() or "fallback" in message.lower() or "disabled" in message.lower():
+            color = "#c8a850"   # amber — warnings
+        elif "ready" in message.lower():
+            color = "#7ab88a"   # green — ready
+        else:
+            color = "#666662"   # default muted
+
+        line = f'<span style="color:#444440">[{ts}]</span> <span style="color:{color}">{message}</span>'
+        self.log_box.append(line)
+
+        # Autoscroll to bottom
+        sb = self.log_box.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    # ─────────────────────────────────────
+    #  Frame handling
+    # ─────────────────────────────────────
+
+    def _on_frame_ready(self, frame: np.ndarray):
+        self.viewfinder.set_frame(frame)
+
+    def _frame_from_thread(self, frame: np.ndarray):
+        """Background thread — buffer only, no Qt calls here."""
+        with QMutexLocker(self._frame_mutex):
+            self._pending_frame = frame.copy()
+            self._frame_dirty   = True
+
+    def _flush_pending_frame(self):
+        if not self._preview_running:
+            return
+        with QMutexLocker(self._frame_mutex):
+            if not self._frame_dirty or self._pending_frame is None:
+                return
+            frame = self._pending_frame
+            self._frame_dirty = False
+        self.viewfinder.set_frame(frame)
+
+    def show_image_in_viewfinder(self, img: np.ndarray):
+        """Safe to call from any thread."""
+        self._signaler.frame_ready.emit(img)
+
+    # ─────────────────────────────────────
+    #  Camera
+    # ─────────────────────────────────────
+
+    def _on_connect_camera(self):
+        if self._preview_running:
+            self._stop_preview()
+            self.options.btn_connect.setText("Connect Camera")
+        else:
+            self.options.btn_connect.setText("Connecting…")
+            self.options.btn_connect.setEnabled(False)
+            threading.Thread(target=self._start_preview, daemon=True).start()
+
+    def _start_preview(self):
+        self._preview_running = True
+        self._live_active     = True
+        self.btn_live.setEnabled(True)
+
+        def _set_running(val):
+            self._preview_running = val
+            if not val:
+                self._live_active = False
+                self.btn_live.setEnabled(False)
+                self.options.btn_connect.setText("Connect Camera")
+                self.options.btn_connect.setEnabled(True)
+
+        threading.Thread(
+            target=preview_loop,
+            args=(lambda: self._preview_running, self._frame_from_thread, self.log, _set_running),
+            daemon=True,
+        ).start()
+        self.log("[camera] Live preview started.")
+        self.options.btn_connect.setText("Disconnect")
+        self.options.btn_connect.setEnabled(True)
+
+    def _stop_preview(self):
+        self._preview_running = False
+        self._live_active     = False
+        self.btn_live.setEnabled(False)
+        with QMutexLocker(self._frame_mutex):
+            self._pending_frame = None
+            self._frame_dirty   = False
+        self._signaler.clear_view.emit()
+        self.log("[camera] Live preview stopped.")
+
+    # ─────────────────────────────────────
+    #  Background camera enumeration
+    # ─────────────────────────────────────
+
+    def _enumerate_cameras_bg(self):
+        """Runs on a daemon thread — never touches Qt widgets directly."""
+        from devices import enumerate_cameras, get_camera_labels
+        import config as _config
+        self.log("[camera] Detecting cameras...")
+        cameras = enumerate_cameras()
+        labels  = get_camera_labels()
+        if cameras:
+            _config.CAPTURE_DEVICE = cameras[0]["index"]
+        self._signaler.cameras_ready.emit(labels)
+
+    def _on_cameras_ready(self, labels: list):
+        """Runs on main thread via signal — safe to update widgets."""
+        cmb = self.options.cmb_camera
+        cmb.blockSignals(True)
+        cmb.clear()
+        if labels:
+            cmb.addItems(labels)
+            self.log(f"[camera] {len(labels)} camera(s) detected.")
+        else:
+            cmb.addItem("No device found")
+            self.log("[camera] No cameras detected.")
+        cmb.blockSignals(False)
+
+    # ─────────────────────────────────────
+    #  Pipeline
+    # ─────────────────────────────────────
+
+    def _pipeline_done(self):
+        self.left_panel.refresh_gallery()
+
+    def _on_live_capture(self):
+        if not self._live_active:
+            self.log("[capture] No live view — connect camera first.")
+            return
+        paths = capture_burst(self.log)
+        run_pipeline_thread(paths, self._onnx_session, self.log,
+                            self._pipeline_done, self.show_image_in_viewfinder,
+                            self._signaler.progress_update.emit)
+
+    def _on_mfnr_start(self):
+        if not self._input_paths:
+            self.log("[input] No images loaded.")
+            return
+        paths = self._input_paths[: config.BURST_COUNT]
+        self.log(f"[input] Running pipeline on {len(paths)} image(s)…")
+        run_pipeline_thread(paths, self._onnx_session, self.log,
+                            self._pipeline_done, self.show_image_in_viewfinder,
+                            self._signaler.progress_update.emit)
+
+    # ─────────────────────────────────────
+    #  File pickers
+    # ─────────────────────────────────────
+
+    def _pick_output_folder(self):
+        d = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        if d:
+            config.OUTPUT_PATH = d
+            self.left_panel.lbl_output_path.setText(d)
+            self.log(f"[output] Folder set: {d}")
+
+    def _pick_input_folder(self):
+        files, _ = QFileDialog.getOpenFileNames(
+            self, "Select Burst Images", "",
+            "Images (*.jpg *.jpeg *.png *.tiff *.tif *.webp *.dng);;All Files (*.*)",
+        )
+        if files:
+            self._input_paths = list(files)
+            self.left_panel.lbl_drop.setText(f"{len(files)} file(s) loaded")
+            self.log(f"[input] Loaded {len(files)} file(s).")
+            img = cv2.imread(files[0])
+            if img is not None:
+                self.show_image_in_viewfinder(img)
+        else:
+            self.log("[input] No files selected.")
+
+    def _load_image_to_viewfinder(self, path: str):
+        img = cv2.imread(path)
         if img is not None:
-            show_image_in_viewfinder(img)   # preview first input image immediately
-    else:
-        log("[input] No files selected.")
+            self.show_image_in_viewfinder(img)
+            self.log(f"[preview] Loaded: {Path(path).name}")
+        else:
+            self.log(f"[preview] Could not read: {path}")
+
+    def _on_open_output_file(self):
+        f, _ = QFileDialog.getOpenFileName(
+            self, "Open Output Image", config.OUTPUT_PATH,
+            "Images (*.jpg *.jpeg *.png *.tiff *.tif *.webp *.dng);;All Files (*.*)",
+        )
+        if f:
+            img = cv2.imread(f)
+            if img is not None:
+                self.show_image_in_viewfinder(img)
+                self.log(f"[preview] Opened: {Path(f).name}")
+            else:
+                self.log(f"[preview] Could not read: {f}")
+
+    # ─────────────────────────────────────
+    #  Options callbacks
+    # ─────────────────────────────────────
+
+    def _on_hdr_mode(self, mode: str):
+        config.HDR_MODE   = mode.lower()
+        config.ENABLE_HDR = mode.lower() == "enable"
+        self.log(f"[options] HDR: {mode}")
+
+    def _on_aspect_changed(self, ratio: str):
+        self.viewfinder.set_aspect(ratio)
+        self.log(f"[viewfinder] Aspect ratio: {ratio}")
+
+    # ─────────────────────────────────────
+    #  Dialogs
+    # ─────────────────────────────────────
+
+    def _open_settings(self):
+        dlg = SettingsDialog(self._camera_labels, self)
+        if dlg.exec():
+            self.left_panel.lbl_output_path.setText(config.OUTPUT_PATH)
+            self.left_panel.refresh_gallery()
+            self.log("[settings] Settings saved.")
+
+    def _open_help(self):
+        HelpDialog(self).exec()
 
 
 # ─────────────────────────────────────────
-#  OPTIONS callbacks
-# ─────────────────────────────────────────
-
-def _on_ecc_changed(s, a)   -> None: config.ECC_THRESHOLD = round(a, 4)
-def _on_burst_changed(s, a) -> None: config.BURST_COUNT   = max(1, int(a))
-
-def _on_hdr_radio(s, a) -> None:
-    config.HDR_MODE   = a.lower()
-    config.ENABLE_HDR = a.lower() == "enable"
-    log(f"[options] HDR: {a}")
-
-def _on_enhance_radio(s, a) -> None:
-    config.ENABLE_ONNX = a.lower() == "enable"
-    log(f"[options] Enhance: {a}")
-
-
-def _on_aspect_radio(s, a) -> None:
-    global _vf_aspect
-    _vf_aspect = a
-    try: dpg.set_value("ar_radio_b", "")
-    except Exception: pass
-    _apply_vf_aspect()
-    log(f"[viewfinder] Aspect ratio: {a}")
-
-
-def _on_aspect_radio_b(s, a) -> None:
-    global _vf_aspect
-    if not a:
-        return
-    _vf_aspect = a
-    try: dpg.set_value("ar_radio", "")
-    except Exception: pass
-    _apply_vf_aspect()
-    log(f"[viewfinder] Aspect ratio: {a}")
-
-
-def _apply_vf_aspect() -> None:
-    vp_w = dpg.get_viewport_width()
-    vp_h = dpg.get_viewport_height()
-    g    = _geometry(vp_w, vp_h)
-    try:
-        dpg.set_item_height("vf_panel", g["vf_h"])
-        dpg.set_item_height("vf_image", g["vf_h"] - 10)
-    except Exception:
-        pass
-
-
-# ─────────────────────────────────────────
-#  Settings / Help popups
-# ─────────────────────────────────────────
-
-def _on_settings_open(s, a)   -> None: dpg.configure_item("settings_popup", show=True)
-def _on_settings_cancel(s, a) -> None: dpg.configure_item("settings_popup", show=False)
-def _on_help_open(s, a)       -> None: dpg.configure_item("help_popup",     show=True)
-
-def _on_output_browse(s, a) -> None:
-    root = tk.Tk(); root.withdraw(); root.attributes("-topmost", True)
-    f = filedialog.askdirectory(title="Select Output Folder"); root.destroy()
-    if f: dpg.set_value("set_output_path", f)
-
-def _on_onnx_browse(s, a) -> None:
-    root = tk.Tk(); root.withdraw(); root.attributes("-topmost", True)
-    f = filedialog.askopenfilename(title="Select ONNX Model",
-        filetypes=[("ONNX model", "*.onnx"), ("All files", "*.*")]); root.destroy()
-    if f: dpg.set_value("set_onnx_path", f)
-
-def _on_settings_save(s, a) -> None:
-    config.OUTPUT_PATH             = dpg.get_value("set_output_path")
-    config.OUTPUT_FORMAT           = dpg.get_value("set_output_format").lower()
-    config.OUTPUT_NAMING           = dpg.get_value("set_output_naming").lower()
-    config.ONNX_MODEL_PATH         = dpg.get_value("set_onnx_path")
-    config.ONNX_EXECUTION_PROVIDER = dpg.get_value("set_onnx_provider").lower()
-    config.CAPTURE_DEVICE          = get_index_from_label(dpg.get_value("set_camera_combo"))
-    config.CAPTURE_WIDTH           = int(dpg.get_value("set_cap_width"))
-    config.CAPTURE_HEIGHT          = int(dpg.get_value("set_cap_height"))
-    config.CAPTURE_FPS             = int(dpg.get_value("set_cap_fps"))
-    _apply_theme(dpg.get_value("set_theme").lower())
-    dpg.configure_item("settings_popup", show=False)
-    log("[settings] Settings saved.")
-    _refresh_project_folder()
-
-
-def _build_settings_popup() -> None:
-    with dpg.window(label="Settings", tag="settings_popup",
-                    modal=True, show=False, width=490, height=530,
-                    no_resize=True, pos=(160, 60)):
-        dpg.add_text("OUTPUT", color=(160, 160, 160))
-        dpg.add_separator(); dpg.add_spacer(height=4)
-        with dpg.group(horizontal=True):
-            dpg.add_input_text(tag="set_output_path", default_value=config.OUTPUT_PATH,
-                               width=340, hint="Output folder path")
-            dpg.add_button(label="Browse", callback=_on_output_browse)
-        dpg.add_spacer(height=4)
-        with dpg.group(horizontal=True):
-            dpg.add_text("Format:")
-            dpg.add_combo(items=["JPG","PNG"], tag="set_output_format",
-                          default_value=config.OUTPUT_FORMAT.upper(), width=110)
-            dpg.add_spacer(width=14)
-            dpg.add_text("Naming:")
-            dpg.add_combo(items=["Timestamp","Sequential"], tag="set_output_naming",
-                          default_value=config.OUTPUT_NAMING.capitalize(), width=130)
-        dpg.add_spacer(height=12)
-        dpg.add_text("ONNX MODEL", color=(160, 160, 160))
-        dpg.add_separator(); dpg.add_spacer(height=4)
-        with dpg.group(horizontal=True):
-            dpg.add_input_text(tag="set_onnx_path", default_value=config.ONNX_MODEL_PATH,
-                               width=340, hint="Path to .onnx model file")
-            dpg.add_button(label="Browse", callback=_on_onnx_browse)
-        dpg.add_spacer(height=4)
-        dpg.add_text("Execution provider:")
-        dpg.add_combo(items=["Auto","OpenCL","DirectML","CPU"], tag="set_onnx_provider",
-                      default_value=config.ONNX_EXECUTION_PROVIDER.capitalize(), width=140)
-        dpg.add_spacer(height=12)
-        dpg.add_text("CAPTURE DEVICE", color=(160, 160, 160))
-        dpg.add_separator(); dpg.add_spacer(height=4)
-        dpg.add_combo(items=_camera_labels, tag="set_camera_combo",
-                      default_value=_camera_labels[0] if _camera_labels else "No cameras found",
-                      width=300)
-        dpg.add_spacer(height=4)
-        with dpg.group(horizontal=True):
-            dpg.add_text("W:")
-            dpg.add_input_int(tag="set_cap_width",  default_value=config.CAPTURE_WIDTH,
-                              width=76, min_value=320, max_value=3840)
-            dpg.add_spacer(width=6)
-            dpg.add_text("H:")
-            dpg.add_input_int(tag="set_cap_height", default_value=config.CAPTURE_HEIGHT,
-                              width=76, min_value=240, max_value=2160)
-            dpg.add_spacer(width=6)
-            dpg.add_text("FPS:")
-            dpg.add_input_int(tag="set_cap_fps",    default_value=config.CAPTURE_FPS,
-                              width=60, min_value=1, max_value=120)
-        dpg.add_spacer(height=12)
-        dpg.add_text("APPEARANCE", color=(160, 160, 160))
-        dpg.add_separator(); dpg.add_spacer(height=4)
-        with dpg.group(horizontal=True):
-            dpg.add_text("Theme:")
-            dpg.add_combo(items=["Dark","Light","Auto"], tag="set_theme",
-                          default_value=getattr(config,"THEME","dark").capitalize(), width=120)
-        dpg.add_spacer(height=18)
-        dpg.add_separator(); dpg.add_spacer(height=8)
-        with dpg.group(horizontal=True):
-            dpg.add_button(label="Save",   width=110, height=30, callback=_on_settings_save)
-            dpg.add_spacer(width=8)
-            dpg.add_button(label="Cancel", width=110, height=30, callback=_on_settings_cancel)
-
-
-def _build_help_popup() -> None:
-    with dpg.window(label="Help — OpenMFC", tag="help_popup",
-                    modal=True, show=False, width=440, height=420,
-                    no_resize=True, pos=(180, 80)):
-        dpg.add_text("OpenMFC — Open Multi-Frame Compounding", color=(200, 200, 200))
-        dpg.add_separator(); dpg.add_spacer(height=6)
-        dpg.add_text("LIVE CAPTURE", color=(160, 160, 160))
-        dpg.add_text("1. Press 'Connect Camera' (OPTIONS) to open the live feed.")
-        dpg.add_text("2. Live Capture → Start unlocks once feed is active.")
-        dpg.add_text("3. Press Start to capture a burst and run the pipeline.")
-        dpg.add_spacer(height=6)
-        dpg.add_text("MANUAL INPUT", color=(160, 160, 160))
-        dpg.add_text("1. Click Browse Files (left panel) to load burst JPEGs.")
-        dpg.add_text("2. Press MFNR (with Input) → Start to process.")
-        dpg.add_spacer(height=6)
-        dpg.add_text("VIEWFINDER", color=(160, 160, 160))
-        dpg.add_text("Shows: live camera feed, pipeline output, or any loaded image.")
-        dpg.add_text("Click any thumbnail in Project Folder to preview it.")
-        dpg.add_text("Use 'Open Output File' (OPTIONS) to browse and preview any output.")
-        dpg.add_spacer(height=6)
-        dpg.add_text("HISTOGRAM", color=(160, 160, 160))
-        dpg.add_text("RGB overlay — updates live from camera, pipeline result, or file load.")
-        dpg.add_spacer(height=6)
-        dpg.add_text("OPTIONS", color=(160, 160, 160))
-        dpg.add_text("ECC Threshold — frame rejection sensitivity.")
-        dpg.add_text("HDR Auto — pipeline decides based on scene brightness.")
-        dpg.add_text("Enhance — requires ONNX model set in Settings.")
-        dpg.add_spacer(height=10)
-        dpg.add_separator(); dpg.add_spacer(height=6)
-        dpg.add_button(label="Close", width=100, height=28,
-                       callback=lambda s, a: dpg.configure_item("help_popup", show=False))
-
-
-# ─────────────────────────────────────────
-#  Main UI
+#  Entry point
 # ─────────────────────────────────────────
 
 def build_ui(onnx_session=None, camera_labels: list[str] = None) -> None:
-    global _onnx_session, _camera_labels
-    _onnx_session  = onnx_session
-    _camera_labels = camera_labels or []
-
-    dpg.create_context()
-    _init_viewfinder_texture()
-    _apply_theme(getattr(config, "THEME", "dark"))
-
-    VP_W, VP_H = 1040, 620
-    dpg.create_viewport(
-        title="OpenMFC - Multi-Frame Compounding",
-        width=VP_W, height=VP_H,
-        min_width=780, min_height=560,
+    import sys
+    # Fix blurry/clipped UI on Windows high-DPI screens
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
+    app = QApplication.instance() or QApplication(sys.argv)
+    app.setApplicationName("OpenMFC")
+    app.setOrganizationName("MoFi Co.")
 
-    _build_settings_popup()
-    _build_help_popup()
+    win = MainWindow(onnx_session=onnx_session, camera_labels=camera_labels)
 
-    g = _geometry(VP_W, VP_H)
+    import os
+    for ico in (os.path.join("assets", "icon.ico"), os.path.join("assets", "OpenMFC ICON.png")):
+        if os.path.exists(ico):
+            win.setWindowIcon(QIcon(ico))
+            break
 
-    with dpg.window(tag="main_window", no_title_bar=True, no_move=True,
-                    no_scrollbar=True, no_scroll_with_mouse=True):
+    win.show()
+    win.log("OpenMFC Beta 0.01.0 ready.")
+    if not camera_labels:
+        win.log("[camera] No cameras detected.")
+    if not onnx_session:
+        win.log("[onnx] No model loaded — Enhance disabled.")
 
-        # ── Top bar ──────────────────────────────────────────────────
-        TITLE   = "OpenMFC  (Open Multi-Frame Compounding)"
-        BTN_END = 184
-        TITLE_W = len(TITLE) * 7
-        _ts = max(4, LEFT_W + g["center_w"] // 2 - BTN_END - TITLE_W // 2)
-
-        with dpg.group(horizontal=True):
-            dpg.add_button(label="HOME",     width=60,  height=24, callback=lambda s,a: None)
-            dpg.add_button(label="SETTINGS", width=72,  height=24, callback=_on_settings_open)
-            dpg.add_button(label="HELP",     width=50,  height=24, callback=_on_help_open)
-            dpg.add_spacer(width=_ts, tag="title_spacer")
-            dpg.add_text(TITLE, tag="title_text")
-
-        dpg.add_spacer(height=4)
-
-        # ── Body ─────────────────────────────────────────────────────
-        with dpg.group(horizontal=True):
-
-            # ── LEFT COLUMN ──────────────────────────────────────────
-            with dpg.group(horizontal=False):
-
-                with dpg.child_window(tag="left_top", width=LEFT_W,
-                                      height=g["left_top"], border=True,
-                                      no_scrollbar=True):
-                    dpg.add_text("Project Folder", color=(200, 200, 200))
-                    dpg.add_separator(); dpg.add_spacer(height=3)
-                    dpg.add_text(config.OUTPUT_PATH, tag="project_path_label",
-                                 color=(110, 110, 110), wrap=LEFT_W - 22)
-                    dpg.add_spacer(height=4)
-                    with dpg.child_window(tag="project_gallery",
-                                          width=LEFT_W - 20,
-                                          height=max(40, g["left_top"] - 94),
-                                          border=False):
-                        dpg.add_text("No outputs yet.", color=(90, 90, 90))
-                    dpg.add_spacer(height=4)
-                    dpg.add_button(label="Refresh Gallery", width=-1, height=24,
-                                   callback=lambda s, a: _refresh_project_folder())
-
-                dpg.add_spacer(height=GAP)
-
-                with dpg.child_window(tag="left_bot", width=LEFT_W,
-                                      height=g["left_bot"], border=True,
-                                      no_scrollbar=True):
-                    dpg.add_text("Input", color=(200, 200, 200))
-                    dpg.add_separator(); dpg.add_spacer(height=5)
-                    with dpg.child_window(tag="input_file_box",
-                                          width=LEFT_W - 20,
-                                          height=max(40, g["left_bot"] - 74),
-                                          border=True):
-                        dpg.add_text("No files loaded.", color=(90, 90, 90))
-                        dpg.add_spacer(height=4)
-                        dpg.add_text("(click Browse to load)", tag="input_label",
-                                     color=(90, 90, 90), wrap=LEFT_W - 32)
-                    dpg.add_spacer(height=5)
-                    dpg.add_button(label="Browse Files", width=-1, height=24,
-                                   callback=_on_input_browse)
-
-            dpg.add_spacer(width=2)
-
-            # ── CENTER COLUMN ────────────────────────────────────────
-            with dpg.child_window(tag="center_col", width=g["center_w"],
-                                  height=g["body_h"], border=False,
-                                  no_scrollbar=True, no_scroll_with_mouse=True):
-
-                # Histogram strip
-                with dpg.child_window(tag="hist_panel", width=g["center_w"] - 2,
-                                      height=HIST_H, border=True, no_scrollbar=True):
-                    dpg.add_text("Histogram", color=(100, 100, 100))
-                    dpg.add_drawlist(tag="hist_draw",
-                                     width=g["center_w"] - 20,
-                                     height=HIST_H - 26)
-
-                dpg.add_spacer(height=GAP)
-
-                # Viewfinder
-                with dpg.child_window(tag="vf_panel", width=g["center_w"] - 2,
-                                      height=g["vf_h"], border=True, no_scrollbar=True):
-                    dpg.add_image("vf_texture", tag="vf_image",
-                                  width=g["center_w"] - 18,
-                                  height=g["vf_h"] - 10)
-
-                dpg.add_spacer(height=GAP)
-
-                # Bottom row: Log + Action buttons — height is fixed LOG_H
-                with dpg.group(horizontal=True):
-
-                    with dpg.child_window(tag="log_panel",
-                                          width=g["center_w"] - 152,
-                                          height=LOG_H, border=True,
-                                          no_scrollbar=True):
-                        dpg.add_text("Log:", color=(120, 120, 120))
-                        dpg.add_input_text(tag="log_box", multiline=True,
-                                           readonly=True, width=-1,
-                                           height=LOG_H - 36, default_value="")
-
-                    dpg.add_spacer(width=2)
-
-                    with dpg.child_window(tag="btn_panel", width=146, height=LOG_H,
-                                          border=True, no_scrollbar=True):
-                        dpg.add_text("Live Capture:", color=(170, 170, 170))
-                        dpg.add_button(label="Start", tag="live_capture_btn",
-                                       width=-1, height=22,
-                                       callback=_on_live_capture_start,
-                                       enabled=False)
-                        dpg.add_spacer(height=2)
-                        dpg.add_separator()
-                        dpg.add_spacer(height=2)
-                        dpg.add_text("MFNR (with Input):", color=(170, 170, 170))
-                        dpg.add_button(label="Start", tag="mfnr_input_btn",
-                                       width=-1, height=22,
-                                       callback=_on_mfnr_input_start)
-
-            dpg.add_spacer(width=2)
-
-            # ── RIGHT COLUMN (OPTIONS) ───────────────────────────────
-            # Cards are collapsible headers — zero fixed heights, no clipping ever.
-            # Panel scrolls if window is too short.
-            with dpg.child_window(tag="right_panel", width=RIGHT_W - 2,
-                                  height=g["body_h"], border=True,
-                                  no_scrollbar=False):
-                dpg.add_text("OPTIONS", color=(200, 200, 200))
-                dpg.add_separator(); dpg.add_spacer(height=2)
-
-                # MFNR
-                with dpg.collapsing_header(label="MFNR", default_open=True):
-                    dpg.add_spacer(height=2)
-                    dpg.add_text("ECC Threshold:", color=(140, 140, 140))
-                    dpg.add_input_float(tag="ecc_input",
-                                        default_value=config.ECC_THRESHOLD,
-                                        width=-1, min_value=0.0, max_value=1.0,
-                                        step=0.0001, format="%.4f",
-                                        callback=_on_ecc_changed)
-                    dpg.add_spacer(height=4)
-
-                dpg.add_spacer(height=2)
-
-                # HDR
-                with dpg.collapsing_header(label="HDR", default_open=True):
-                    dpg.add_spacer(height=2)
-                    dpg.add_radio_button(items=["Auto", "Enable", "Disable"],
-                                         tag="hdr_radio",
-                                         default_value=config.HDR_MODE.capitalize(),
-                                         callback=_on_hdr_radio)
-                    dpg.add_spacer(height=4)
-
-                dpg.add_spacer(height=2)
-
-                # Enhance
-                with dpg.collapsing_header(label="Enhance", default_open=True):
-                    dpg.add_spacer(height=2)
-                    dpg.add_radio_button(items=["Enable", "Disable"],
-                                         tag="enhance_radio",
-                                         default_value="Enable" if config.ENABLE_ONNX else "Disable",
-                                         callback=_on_enhance_radio)
-                    dpg.add_spacer(height=4)
-
-                dpg.add_spacer(height=2)
-
-                # Burst Count
-                with dpg.collapsing_header(label="Burst Count", default_open=True):
-                    dpg.add_spacer(height=2)
-                    with dpg.group(horizontal=True):
-                        dpg.add_text("Burst:")
-                        dpg.add_input_int(tag="burst_input",
-                                          default_value=config.BURST_COUNT,
-                                          width=-1, min_value=1, max_value=100,
-                                          callback=_on_burst_changed)
-                    dpg.add_spacer(height=4)
-
-                dpg.add_spacer(height=2)
-
-                # Camera Preview
-                with dpg.collapsing_header(label="Camera Preview", default_open=True):
-                    dpg.add_spacer(height=2)
-                    dpg.add_button(label="Connect Camera", tag="connect_camera_btn",
-                                   width=-1, height=24,
-                                   callback=_on_connect_camera)
-                    dpg.add_spacer(height=4)
-
-                dpg.add_spacer(height=2)
-
-                # Viewfinder Ratio
-                with dpg.collapsing_header(label="Viewfinder Ratio", default_open=True):
-                    dpg.add_spacer(height=2)
-                    with dpg.group(horizontal=True):
-                        dpg.add_radio_button(items=["Free", "4:3"],
-                                             tag="ar_radio",
-                                             default_value="Free",
-                                             callback=_on_aspect_radio)
-                        dpg.add_spacer(width=6)
-                        dpg.add_radio_button(items=["16:9", "1:1"],
-                                             tag="ar_radio_b",
-                                             default_value="",
-                                             callback=_on_aspect_radio_b)
-                    dpg.add_spacer(height=4)
-
-                dpg.add_spacer(height=2)
-
-                # View Output
-                with dpg.collapsing_header(label="View Output", default_open=True):
-                    dpg.add_spacer(height=2)
-                    dpg.add_button(label="Open Output File", tag="open_output_btn",
-                                   width=-1, height=24,
-                                   callback=_on_open_output_file)
-                    dpg.add_spacer(height=4)
-
-    # ── Finalize ────────────────────────────────────────────────────
-    dpg.set_viewport_resize_callback(_on_viewport_resize)
-    dpg.set_primary_window("main_window", True)
-    dpg.setup_dearpygui()
-
-    import os as _os
-    _ico  = _os.path.join("assets", "icon.ico")
-    _png  = _os.path.join("assets", "OpenMFC ICON.png")
-    _icon = _ico if _os.path.exists(_ico) else (_png if _os.path.exists(_png) else None)
-    if _icon:
-        try:
-            dpg.set_viewport_small_icon(_icon)
-            dpg.set_viewport_large_icon(_icon)
-            print(f"  Icon: {_icon}")
-        except Exception as e:
-            print(f"  Icon skipped: {e}")
-    else:
-        print("  No icon in assets/")
-
-    dpg.show_viewport()
-
-    while dpg.is_dearpygui_running():
-        _flush_pending_frame()
-        dpg.render_dearpygui_frame()
-
-    dpg.destroy_context()
+    sys.exit(app.exec())
