@@ -1,7 +1,12 @@
 # OpenMFC-Cam
 **Open Multi-Frame Compounding Camera**
 
-A desktop computational photography pipeline that takes a burst of frames — either captured live from a webcam/USB camera or loaded manually — and produces a single cleaned, enhanced output image using physics-based noise reduction combined with optional ML enhancement.
+![OSI Approved](https://img.shields.io/badge/license-GPLv3-brightgreen?logo=open-source-initiative)
+![Python](https://img.shields.io/badge/Python-3.10+-yellow)
+![Platform](https://img.shields.io/badge/Platform-Windows-blue)
+![GitHub release](https://img.shields.io/github/v/release/LazyR3nR3n/OpenMFC-Cam?include_prereleases)
+
+A standalone desktop computational MFNR photography tool that takes a burst of frames — either captured live from a webcam/USB camera or loaded manually — and produces a single cleaned, enhanced output image using physics-based noise reduction combined with optional ML enhancement.
 
 ---
 
@@ -9,7 +14,7 @@ A desktop computational photography pipeline that takes a burst of frames — ei
 
 **MFNRC (Multi-Frame Noise Reduction Compounding)** is the core algorithm:
 
-1. **Burst Capture** — captures multiple frames from a live camera or accepts manually loaded JPEGs
+1. **Burst Capture** — captures multiple frames from a live camera or accepts manually loaded JPEGs (Note: The live camera field with live Camera input are untested as of current release)
 2. **ECC Alignment** — aligns frames using Enhanced Correlation Coefficient to reject motion-blurred or misaligned frames
 3. **MFNR** — edge-aware weighted averaging across aligned frames to suppress noise while preserving detail
 4. **HDR Fusion** — Mertens exposure fusion on the denoised output for highlight/shadow recovery (Auto / Enable / Disable)
@@ -63,6 +68,36 @@ python src/main.py
 Pre-built Windows executable available under [Releases](https://github.com/LazyR3nR3n/OpenMFC-Cam/releases).
 
 No Python installation required.
+
+---
+**Alpha Limitations**
+
+---
+
+**⚠️ Alpha Notice**
+A terminal window will appear on startup — this is expected behavior for DearPyGui applications in Alpha builds and will be removed in future releases. OpenMFC is fully open source under GPLv3, feel free to inspect every line of code before running it.
+
+---
+
+
+
+## System Requirements
+
+| | |
+|---|---|
+| **OS** | Windows 10 / 11 (64-bit) |
+| **Python** | 3.10+ (if running from source) |
+| **RAM** | 4GB minimum, 8GB recommended |
+| **Camera** | Any USB or built-in webcam (Alternatively, Use Open Camera Burst capture mode and add it through input)|
+| **GPU** | Optional — enables OpenCL/DirectML ONNX acceleration |
+
+---
+
+## Support
+
+If OpenMFC has been useful to you, consider buying me a coffee!
+
+☕ [Ko-fi — LazyR3nR3n](https://ko-fi.com/lazyr3nr3n)
 
 ---
 
