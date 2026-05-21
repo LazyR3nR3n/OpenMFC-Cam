@@ -1,6 +1,4 @@
-# ─────────────────────────────────────────
-#  OpenMFC — Configuration
-# ─────────────────────────────────────────
+
 import os
 
 
@@ -32,3 +30,8 @@ CAPTURE_DEVICE: int = 0             # updated at runtime by devices.enumerate_ca
 CAPTURE_WIDTH: int = 1280
 CAPTURE_HEIGHT: int = 720
 CAPTURE_FPS: int = 30
+
+
+
+
+#by LazyR3nR3n
