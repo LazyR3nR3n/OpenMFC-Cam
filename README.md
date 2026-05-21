@@ -57,8 +57,7 @@ git clone https://github.com/LazyR3nR3n/OpenMFC-Cam.git
 cd OpenMFC-Cam
 python -m venv .venv
 .venv\Scripts\activate
-pip install opencv-python dearpygui numpy onnxruntime Pillow
-python src/main.py
+pip install opencv-python pyqt6 rawpy numpy onnxruntime Pillow
 ```
 
 ---
@@ -70,7 +69,7 @@ Pre-built Windows executable available under [Releases](https://github.com/LazyR
 No Python installation required.
 
 ---
-**Alpha Limitations**
+**Beta Limitations**
 
 ---
 
