@@ -1,3 +1,5 @@
+import os
+import sys
 import cv2
 import threading
 import time
@@ -16,6 +18,10 @@ from PyQt6.QtGui import QFont, QPixmap, QImage, QPainter, QPen, QColor, QBrush, 
 
 from devices import get_index_from_label
 from pipeline import run_pipeline_thread, capture_burst, preview_loop
+
+def _asset_path(relative: str) -> str:
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, relative)
 
 
 # ─────────────────────────────────────────
@@ -1002,6 +1008,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(980, 580)
         self.resize(1200, 700)
         self.setStyleSheet(APP_STYLE)
+        self.setWindowIcon(QIcon(_asset_path(os.path.join("assets", "icon.ico"))))
 
         self._onnx_session    = onnx_session
         self._camera_labels   = camera_labels or []
