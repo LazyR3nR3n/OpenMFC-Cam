@@ -74,8 +74,9 @@ No Python installation required.
 
 ---
 
-**⚠️ Alpha Notice**
-A terminal window will appear on startup — this is expected behavior for DearPyGui applications in Alpha builds and will be removed in future releases. OpenMFC is fully open source under GPLv3, feel free to inspect every line of code before running it.
+Beta Notice
+⚠️ Beta 0.01.0
+A brief console window flash may appear on startup — this is a known PyInstaller bootloader behavior and is cosmetic only. OpenMFC is fully open source under GPLv3, feel free to inspect every line of code before running it.
 
 ---
 
