@@ -3,7 +3,7 @@ import numpy as np
 import onnxruntime as ort
 from pathlib import Path
 from config import OUTPUT_PATH, ENABLE_ONNX, ONNX_MODEL_PATH, ONNX_EXECUTION_PROVIDER
-
+import config
 
 #Execution provider mapping
 
@@ -71,16 +71,57 @@ def _cv_enhance(image: np.ndarray) -> np.ndarray:
 #ONNX inference
 
 def _onnx_enhance(image: np.ndarray, session: ort.InferenceSession) -> np.ndarray:
-    """Run image through loaded ONNX model."""
+    """Run image through ONNX model using tiling to handle large images."""
     input_name = session.get_inputs()[0].name
-    input_tensor = preprocess(image)
+    tile_size = 256
+    overlap = 16
+    scale = 4
 
-    print("[enhance] Running ONNX inference...")
-    output = session.run(None, {input_name: input_tensor})
-    result = postprocess(output[0])
+    max_h = config.ENHANCE_MAX_HEIGHT
+    h, w = image.shape[:2]
+    if h > max_h:
+        scale_down = max_h / h
+        new_w = int(w * scale_down)
+        image = cv2.resize(image, (new_w, max_h), interpolation=cv2.INTER_AREA)
+        print(f"[enhance] Downscaled input to {new_w}x{max_h} before inference")
 
+    input_name = session.get_inputs()[0].name
+
+    h, w = image.shape[:2]
+    out_h, out_w = h * scale, w * scale
+    output = np.zeros((out_h, out_w, 3), dtype=np.float32)
+    weight = np.zeros((out_h, out_w, 3), dtype=np.float32)
+
+    print(f"[enhance] Tiled inference {w}x{h} → {out_w}x{out_h}")
+
+    y = 0
+    while y < h:
+        x = 0
+        while x < w:
+            # crop tile with overlap
+            x1 = max(x - overlap, 0)
+            y1 = max(y - overlap, 0)
+            x2 = min(x + tile_size + overlap, w)
+            y2 = min(y + tile_size + overlap, h)
+
+            tile = image[y1:y2, x1:x2]
+            tensor = preprocess(tile)
+            out = session.run(None, {input_name: tensor})[0]
+            out_tile = postprocess(out)
+
+            # output coords
+            ox1, oy1 = x1 * scale, y1 * scale
+            ox2, oy2 = x2 * scale, y2 * scale
+
+            output[oy1:oy2, ox1:ox2] += out_tile.astype(np.float32)
+            weight[oy1:oy2, ox1:ox2] += 1.0
+
+            x += tile_size
+        y += tile_size
+
+    output = np.clip(output / np.maximum(weight, 1e-6), 0, 255).astype(np.uint8)
     print("[enhance] Inference complete")
-    return result
+    return output
 
 
 #Main entry point

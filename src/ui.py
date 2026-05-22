@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QSlider, QComboBox, QRadioButton,
     QButtonGroup, QFrame, QSizePolicy, QFileDialog, QScrollArea,
     QTextEdit, QSpinBox, QDialog, QGridLayout, QLineEdit, QProgressBar,
+    QMessageBox,
 )
 from PyQt6.QtCore import Qt, QSize, QTimer, QObject, pyqtSignal, QMutex, QMutexLocker, QPoint, QRect
 from PyQt6.QtGui import QFont, QPixmap, QImage, QPainter, QPen, QColor, QBrush, QIcon
@@ -886,6 +887,12 @@ class SettingsDialog(QDialog):
             getattr(config, "ONNX_EXECUTION_PROVIDER", "auto").capitalize()
         )
         xg.addWidget(self.cmb_provider, 1, 1)
+        xg.addWidget(_muted("Resolution:"), 2, 0)
+        self.sp_enhance_max_height = QSpinBox()
+        self.sp_enhance_max_height.setRange(480, 2160)
+        self.sp_enhance_max_height.setValue(config.ENHANCE_MAX_HEIGHT)
+        self.sp_enhance_max_height.setSuffix(" px")
+        xg.addWidget(self.sp_enhance_max_height, 2, 1)
         root.addLayout(xg); root.addSpacing(6)
 
         section("Capture Device")
@@ -918,9 +925,36 @@ class SettingsDialog(QDialog):
         root.addLayout(btn_row)
 
     def _browse_onnx(self):
-        f, _ = QFileDialog.getOpenFileName(self, "Select ONNX Model", "", "ONNX (*.onnx);;All (*.*)")
-        if f:
-            self.ed_onnx.setText(f)
+            f, _ = QFileDialog.getOpenFileName(self, "Select Model", "", "Model Files (*.onnx *.pth);;All (*.*)")
+            if f:
+                if f.endswith(".pth"):
+                    f = self._convert_pth_to_onnx(f)
+                if f:
+                    self.ed_onnx.setText(f)
+
+    def _convert_pth_to_onnx(self, pth_path: str) -> str:
+        import subprocess, sys, os
+        onnx_path = os.path.splitext(pth_path)[0] + ".onnx"
+        script = os.path.join("assets", "pytorch2onnx.py")
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Converting Model")
+        msg.setText("Converting .pth to .onnx, please wait...")
+        msg.setStandardButtons(QMessageBox.StandardButton.NoButton)
+        msg.show()
+        QApplication.processEvents()
+
+        try:
+            subprocess.run(
+                [sys.executable, script, "--input", pth_path, "--output", onnx_path],
+                check=True
+            )
+            msg.close()
+            return onnx_path
+        except subprocess.CalledProcessError:
+            msg.close()
+            QMessageBox.critical(self, "Conversion Failed", "Could not convert .pth to .onnx. Check that PyTorch is installed.")
+            return ""
 
     def _save(self):
         config.OUTPUT_PATH             = self.ed_output.text()
@@ -932,8 +966,24 @@ class SettingsDialog(QDialog):
         config.CAPTURE_WIDTH           = self.sp_capture_width.value()
         config.CAPTURE_HEIGHT          = self.sp_capture_height.value()
         config.CAPTURE_FPS             = self.sp_capture_fps.value()
-        self.accept()
 
+        import json, os
+        os.makedirs(os.path.dirname(config.SETTINGS_PATH), exist_ok=True)
+        payload = {
+            "OUTPUT_PATH": config.OUTPUT_PATH,
+            "OUTPUT_FORMAT": config.OUTPUT_FORMAT,
+            "OUTPUT_NAMING": config.OUTPUT_NAMING,
+            "ONNX_MODEL_PATH": config.ONNX_MODEL_PATH,
+            "ONNX_EXECUTION_PROVIDER": config.ONNX_EXECUTION_PROVIDER,
+            "CAPTURE_DEVICE": config.CAPTURE_DEVICE,
+            "CAPTURE_WIDTH": config.CAPTURE_WIDTH,
+            "CAPTURE_HEIGHT": config.CAPTURE_HEIGHT,
+            "CAPTURE_FPS": config.CAPTURE_FPS,
+        }
+        with open(config.SETTINGS_PATH, "w") as f:
+            json.dump(payload, f, indent=2)
+
+        self.accept()
 
 # ─────────────────────────────────────────
 #  Help dialog
