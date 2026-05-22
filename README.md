@@ -77,6 +77,16 @@ A brief console window flash may appear on startup — this is a known PyInstall
 
 ---
 
+Known Beta v0.1.0 issues:
+
+>Settings (output path, ONNX model path) do not persist between sessions — will be fixed in next patch.
+>PowerShell window appears on startup.
+>Automatic camera detection not yet implemented."
+
+
+All will be expected to be fix ob next update
+
+---
 
 
 ## System Requirements
