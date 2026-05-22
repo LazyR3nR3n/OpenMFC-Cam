@@ -84,7 +84,7 @@ Automatic camera detection not yet implemented."
 All will be expected to be fix on next update
 
 
-Note: currently the Onnx file for the Real-ESRGAN(or lack there of) is still hard coded so it won't save and going and falling back to OpenCV enhancements, although available in settings, and can Theoritically can be change in settings further details testing is needed so feedback is greately appropriated. Thus it was also be fix on the update Beta v0.1.1 such as the rest of the issues. 
+Note: currently the Onnx file for the Real-ESRGAN(or lack there of) is currently falling back to OpenCV enhancements, although available in settings, and can Theoritically can be change in settings further testing is needed so feedback is greately appropriated. Thus it was also be fix on the update Beta v0.1.1 such as the rest of the issues. 
 
 
  
