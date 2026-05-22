@@ -72,12 +72,7 @@ No Python installation required.
 **Beta Limitations**
 
 ---
-⚠️ Beta v0.01.0
-A brief console window flash may appear on startup — this is a known PyInstaller bootloader behavior and is cosmetic only. OpenMFC is fully open source under GPLv3, feel free to inspect every line of code before running it.
-
----
-
-Known Beta v0.1.0 issues:
+⚠️ Known Beta v0.1.0 issues:
 
 Settings (output path, ONNX model path) do not persist between sessions — will be fixed in next patch.
 
