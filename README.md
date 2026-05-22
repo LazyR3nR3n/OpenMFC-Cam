@@ -57,8 +57,7 @@ git clone https://github.com/LazyR3nR3n/OpenMFC-Cam.git
 cd OpenMFC-Cam
 python -m venv .venv
 .venv\Scripts\activate
-pip install opencv-python dearpygui numpy onnxruntime Pillow
-python src/main.py
+pip install opencv-python pyqt6 rawpy numpy onnxruntime Pillow
 ```
 
 ---
@@ -70,15 +69,26 @@ Pre-built Windows executable available under [Releases](https://github.com/LazyR
 No Python installation required.
 
 ---
-**Alpha Limitations**
+**Beta Limitations**
 
 ---
+⚠️ Known Beta v0.1.0 issues:
 
-**⚠️ Alpha Notice**
-A terminal window will appear on startup — this is expected behavior for DearPyGui applications in Alpha builds and will be removed in future releases. OpenMFC is fully open source under GPLv3, feel free to inspect every line of code before running it.
+Settings (output path, ONNX model path) do not persist between sessions — will be fixed in next patch.
 
+PowerShell window appears on startup.
+
+Automatic camera detection not yet implemented."
+
+
+All will be expected to be fix on next update
+
+
+Note: currently the Onnx file for the Real-ESRGAN(or lack there of) is currently falling back to OpenCV enhancements, although available in settings, and can Theoritically can be change in settings further testing is needed so feedback is greately appropriated. Thus it was also be fix on the update Beta v0.1.1 such as the rest of the issues. 
+
+
+ 
 ---
-
 
 
 ## System Requirements
