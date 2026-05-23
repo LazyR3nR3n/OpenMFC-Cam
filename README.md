@@ -57,7 +57,7 @@ git clone https://github.com/LazyR3nR3n/OpenMFC-Cam.git
 cd OpenMFC-Cam
 python -m venv .venv
 .venv\Scripts\activate
-pip install opencv-python pyqt6 rawpy numpy onnxruntime Pillow
+pip install opencv-python pyqt6 rawpy numpy onnxruntime Pillow requests
 ```
 
 ---
@@ -69,7 +69,7 @@ Pre-built Windows executable available under [Releases](https://github.com/LazyR
 No Python installation required.
 
 ---
-What's New in Beta 0.01.1
+## What's New in Beta 0.01.1
 
 * Auto-updater — OpenMFC now checks for new releases on startup. A dialog appears when an update is available, letting you download and install it in one click.
 * PowerShell startup fix — The black console window that flashed on startup is now gone.
@@ -82,7 +82,7 @@ IMPORTANT NOTE: MFNR resolution cap is adjustable in settings — default set in
 
 ---
 
-Beta Limitations
+## Beta Limitations
 
 ---
 ⚠️ Known issues in Beta 0.01.1:
