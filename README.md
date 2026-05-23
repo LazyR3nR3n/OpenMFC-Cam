@@ -50,7 +50,7 @@ Set your `.onnx` file path in Settings and select the execution provider (Auto /
 
 ## Running from Source
 
-**Requirements:** Python 3.10+
+**Requirements:** Python 3.12+
 
 ```bash
 git clone https://github.com/LazyR3nR3n/OpenMFC-Cam.git
@@ -101,7 +101,6 @@ Beta Limitations
 | | |
 |---|---|
 | **OS** | Windows 10 / 11 (64-bit) |
-| **Python** | 3.10+ (if running from source) |
 | **RAM** | 8GB minimum, 16GB recommended(or higher if using a heavier onnx model)|
 | **Camera** | Any USB or built-in webcam (Alternatively, Use Open Camera Burst capture mode and add it through input)|
 | **GPU** | Use for faster and Better results— enables OpenCL/DirectML ONNX acceleration |
