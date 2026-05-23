@@ -1054,6 +1054,15 @@ class HelpDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self, onnx_session=None, camera_labels: list[str] = None):
         super().__init__()
+        # ... all your existing code ...
+        
+        # Enumerate cameras in background — avoids blocking the UI on startup
+        threading.Thread(target=self._enumerate_cameras_bg, daemon=True).start()
+
+        # Check for updates in background on startup
+        from updater import check_for_updates
+        check_for_updates(parent=self, silent=True)
+        
         self.setWindowTitle("OpenMFC — Multi-Frame Compounding")
         self.setMinimumSize(980, 580)
         self.resize(1200, 700)

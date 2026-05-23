@@ -1,4 +1,5 @@
 import cv2
+import os
 import numpy as np
 import onnxruntime as ort
 from pathlib import Path
@@ -24,6 +25,42 @@ def _resolve_providers(provider_key: str) -> list[str] | None:
 def load_model(model_path: str) -> ort.InferenceSession | None:
     providers = _resolve_providers(ONNX_EXECUTION_PROVIDER)
 
+    # Auto-convert .pth to .onnx if needed
+    if model_path.lower().endswith(".pth"):
+        onnx_path = os.path.splitext(model_path)[0] + ".onnx"
+        if not os.path.exists(onnx_path):
+            print(f"[enhance] .pth detected — converting to ONNX...")
+            try:
+                from pytorch2onnx import SRVGGNetCompact
+                import torch
+
+                model = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=64, num_conv=32, upscale=4, act_type='prelu')
+                ckpt = torch.load(model_path, map_location='cpu')
+                key = 'params_ema' if 'params_ema' in ckpt else 'params'
+                model.load_state_dict(ckpt[key])
+                model.eval()
+
+                x = torch.rand(1, 3, 64, 64)
+                with torch.no_grad():
+                    torch.onnx.export(
+                        model, x, onnx_path,
+                        opset_version=11,
+                        export_params=True,
+                        dynamic_axes={
+                            'input': {2: 'height', 3: 'width'},
+                            'output': {2: 'height', 3: 'width'}
+                        },
+                        input_names=['input'],
+                        output_names=['output']
+                    )
+                print(f"[enhance] Converted and saved: {onnx_path}")
+            except Exception as e:
+                print(f"[enhance] .pth conversion failed: {e}")
+                return None
+        else:
+            print(f"[enhance] Found existing .onnx, skipping conversion: {onnx_path}")
+        model_path = onnx_path
+
     try:
         session = ort.InferenceSession(
             model_path,
@@ -35,7 +72,6 @@ def load_model(model_path: str) -> ort.InferenceSession | None:
     except Exception as e:
         print(f"[enhance] Failed to load model: {e}")
         return None
-
 
 #Tensor conversion
 

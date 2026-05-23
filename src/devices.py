@@ -24,6 +24,7 @@ def _get_camera_names_windows() -> dict[int, str]:
             capture_output=True,
             text=True,
             timeout=5,
+            creationflags=subprocess.CREATE_NO_WINDOW,  # ← fix: no flash on startup
         )
         lines = [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
         for i, name in enumerate(lines):

@@ -48,10 +48,13 @@ def main() -> None:
 
     ensure_icon()
 
+    # Resolve model path relative to bundle root
+    config.ONNX_MODEL_PATH = _asset_path(config.ONNX_MODEL_PATH)
+
     onnx_session = None
     if config.ENABLE_ONNX:
         onnx_session = load_model(config.ONNX_MODEL_PATH)
-
+        
     # Open the window immediately with no camera list — enumeration runs
     # in a background thread after the UI is up to avoid the startup spike
     # from probing up to 10 VideoCapture indices synchronously.
