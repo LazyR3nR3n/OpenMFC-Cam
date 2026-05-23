@@ -2,7 +2,7 @@
 **Open Multi-Frame Compounding Camera**
 
 ![OSI Approved](https://img.shields.io/badge/license-GPLv3-brightgreen?logo=open-source-initiative)
-![Python](https://img.shields.io/badge/Python-3.10+-yellow)
+![Python](https://img.shields.io/badge/Python-3.12+-yellow)
 ![Platform](https://img.shields.io/badge/Platform-Windows-blue)
 ![GitHub release](https://img.shields.io/github/v/release/LazyR3nR3n/OpenMFC-Cam?include_prereleases)
 
