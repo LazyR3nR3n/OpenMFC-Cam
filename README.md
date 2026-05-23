@@ -18,7 +18,7 @@ A standalone desktop computational MFNR photography tool that takes a burst of f
 2. **ECC Alignment** — aligns frames using Enhanced Correlation Coefficient to reject motion-blurred or misaligned frames
 3. **MFNR** — edge-aware weighted averaging across aligned frames to suppress noise while preserving detail
 4. **HDR Fusion** — Mertens exposure fusion on the denoised output for highlight/shadow recovery (Auto / Enable / Disable)
-5. **ONNX Enhancement** — optional ML upscaling/enhancement via ONNX Runtime (default: Real-ESRGAN lite; and other alternatives.)
+5. **ONNX Enhancement** — optional ML upscaling/enhancement via ONNX Runtime (default: Real-ESRGAN (realesr-general-x4v3) ; and other alternatives.)
 
 ---
 
@@ -40,7 +40,7 @@ The enhance stage is hot-swappable via Settings → ONNX Model Path.
 
 | Model | Purpose | Notes |
 |-------|---------|-------|
-| Real-ESRGAN realesr-general-x4v3 | Default — fast upscaling | Recommended for general use |
+| Real-ESRGAN (realesr-general-x4v3) | Default — fast upscaling | Recommended for general use |
 | SwinIR | High-quality restoration | Slower, better detail |
 | NAFNet | Deblurring + denoising | ALternative backend |
 
