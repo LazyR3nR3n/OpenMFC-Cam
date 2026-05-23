@@ -104,7 +104,7 @@ Beta Limitations
 | **Python** | 3.10+ (if running from source) |
 | **RAM** | 4GB minimum, 8GB recommended |
 | **Camera** | Any USB or built-in webcam (Alternatively, Use Open Camera Burst capture mode and add it through input)|
-| **GPU** | Optional — enables OpenCL/DirectML ONNX acceleration |
+| **GPU** | Use for faster and Better results— enables OpenCL/DirectML ONNX acceleration |
 
 ---
 
