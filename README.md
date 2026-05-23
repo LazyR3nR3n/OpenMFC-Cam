@@ -75,7 +75,15 @@ What's New in Beta 0.01.1
 * PowerShell startup fix — The black console window that flashed on startup is now gone.
 * `.pth` auto-conversion — Power users can now load `.pth` model files directly; OpenMFC converts them to `.onnx` automatically on first load.
 * ONNX model path fix — Model path now resolves correctly after installation (no more "model not found" on startup).
+
+
+IMPORTANT NOTE: MFNR resolution cap is adjustable in settings — default 1080p for performance
+
+
+---
+
 Beta Limitations
+
 ---
 ⚠️ Known issues in Beta 0.01.1:
 
