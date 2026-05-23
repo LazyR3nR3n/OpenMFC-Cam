@@ -40,7 +40,7 @@ The enhance stage is hot-swappable via Settings → ONNX Model Path.
 
 | Model | Purpose | Notes |
 |-------|---------|-------|
-| Real-ESRGAN lite | Default — fast upscaling | Recommended for general use |
+| Real-ESRGAN realesr-general-x4v3 | Default — fast upscaling | Recommended for general use |
 | SwinIR | High-quality restoration | Slower, better detail |
 | NAFNet | Deblurring + denoising | ALternative backend |
 
@@ -69,22 +69,19 @@ Pre-built Windows executable available under [Releases](https://github.com/LazyR
 No Python installation required.
 
 ---
-**Beta Limitations**
+What's New in Beta 0.01.1
 
+* Auto-updater — OpenMFC now checks for new releases on startup. A dialog appears when an update is available, letting you download and install it in one click.
+* PowerShell startup fix — The black console window that flashed on startup is now gone.
+* `.pth` auto-conversion — Power users can now load `.pth` model files directly; OpenMFC converts them to `.onnx` automatically on first load.
+* ONNX model path fix — Model path now resolves correctly after installation (no more "model not found" on startup).
+Beta Limitations
 ---
-⚠️ Known Beta v0.1.0 issues:
+⚠️ Known issues in Beta 0.01.1:
 
-Settings (output path, ONNX model path) do not persist between sessions — will be fixed in next patch.
-
-PowerShell window appears on startup.
-
-Automatic camera detection not yet implemented."
-
-
-All will be expected to be fix on next update
-
-
-Note: currently the Onnx file for the Real-ESRGAN(or lack there of) is currently falling back to OpenCV enhancements, although available in settings, and can Theoritically can be change in settings further testing is needed so feedback is greately appropriated. Thus it was also be fix on the update Beta v0.1.1 such as the rest of the issues. 
+* Manual camera detection not yet implemented (planned for v0.02.0).
+* `.pth` auto-conversion only supports SRVGGNetCompact architecture.
+* Live camera input via USB is untested — feedback welcome.
 
 
  
