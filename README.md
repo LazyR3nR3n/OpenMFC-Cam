@@ -77,7 +77,7 @@ What's New in Beta 0.01.1
 * ONNX model path fix — Model path now resolves correctly after installation (no more "model not found" on startup).
 
 
-IMPORTANT NOTE: MFNR resolution cap is adjustable in settings — default 1080p for performance
+IMPORTANT NOTE: MFNR resolution cap is adjustable in settings — defaultrd on 1080p for performance. Choose between 480–4320 (4K). It is again, default currently in 1080. Lower = faster, less detail. Higher = slower, more detail.(I decided this since I noticed that it is eating resources like it is on a feast, on my laptop and I got an old one so yeah, BUT if you have a better Laptop or PC this shouldn't be an issue at all since the default ML model are ALREADY lightweight. I haven't try any other model though so feel free to give feedback how it goes, feedback is much so appropriated. -LazyR3nR3n)
 
 
 ---
