@@ -9,6 +9,23 @@
 A standalone desktop computational MFNR photography tool that takes a burst of frames — either captured live from a webcam/USB camera or loaded manually — and produces a single cleaned, enhanced output image using physics-based noise reduction combined with optional ML enhancement.
 
 ---
+## Table of Contents
+- [How It Works](#how-it-works)
+- [UI Layout](#ui-layout)
+- [ONNX Model Swap](#onnx-model-swap)
+- [Running from Source](#running-from-source)
+- [Download](#download)
+- [What's New in Beta 0.01.1](#whats-new-in-beta-0011)
+- [Beta Limitations](#beta-limitations)
+- [System Requirements](#system-requirements)
+- [Support](#support)
+- [License](#license)
+
+
+
+
+
+---
 
 ## How It Works
 
