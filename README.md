@@ -102,7 +102,7 @@ Beta Limitations
 |---|---|
 | **OS** | Windows 10 / 11 (64-bit) |
 | **Python** | 3.10+ (if running from source) |
-| **RAM** | 4GB minimum, 8GB recommended |
+| **RAM** | 8GB minimum, 16GB recommended(or higher if using a heavier onnx model)|
 | **Camera** | Any USB or built-in webcam (Alternatively, Use Open Camera Burst capture mode and add it through input)|
 | **GPU** | Use for faster and Better results— enables OpenCL/DirectML ONNX acceleration |
 
