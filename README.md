@@ -70,11 +70,16 @@ Set your `.onnx` file path in Settings and select the execution provider (Auto /
 **Requirements:** Python 3.12+
 
 ```bash
-git clone https://github.com/LazyR3nR3n/OpenMFC-Cam.git
+ git clone https://github.com/LazyR3nR3n/OpenMFC-Cam.git
 cd OpenMFC-Cam
 python -m venv .venv
 .venv\Scripts\activate
+
+# Required
 pip install opencv-python pyqt6 rawpy numpy onnxruntime Pillow requests
+
+# Optional — only needed for .pth model auto-conversion
+pip install torch
 ```
 
 ---
