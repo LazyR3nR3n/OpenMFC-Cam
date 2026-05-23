@@ -103,7 +103,7 @@ Beta Limitations
 | **OS** | Windows 10 / 11 (64-bit) |
 | **RAM** | 8GB minimum, 16GB recommended(or higher if using a heavier onnx model)|
 | **Camera** | Any USB or built-in webcam (Alternatively, Use Open Camera Burst capture mode and add it through input)|
-| **GPU** | Use for faster and Better results— enables OpenCL/DirectML ONNX acceleration |
+| **GPU** | Use for faster results— enables OpenCL/DirectML ONNX acceleration |
 
 ---
 
