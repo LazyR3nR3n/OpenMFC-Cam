@@ -110,7 +110,7 @@ IMPORTANT NOTE: MFNR resolution cap is adjustable in settings — default set in
 ⚠️ Known issues in Beta 0.01.1:
 
 * Manual camera detection not yet implemented (planned for v0.02.0).
-* `.pth` auto-conversion only supports SRVGGNetCompact architecture.
+* `.pth` auto-conversion only supports Real-ESRGAN (SRVGGNetCompact) architecture.
 * Live camera input via USB is untested — feedback welcome.
 
 
