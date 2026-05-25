@@ -95,7 +95,7 @@ No Python installation required.
 
 * Auto-updater — OpenMFC now checks for new releases on startup. A dialog appears when an update is available, letting you download and install it in one click.
 * PowerShell startup fix — The black console window that flashed on startup is now gone.
-* `.pth` auto-conversion — Power users can now load `.pth` model files directly; OpenMFC converts them to `.onnx` automatically on first load.
+* `.pth` auto-conversion — Power users can now load `.pth` model files directly; OpenMFC converts them to `.onnx` automatically on first load.(Currenltly .pth auto-conversion currently supports Real-ESRGAN architecture only)
 * ONNX model path fix — Model path now resolves correctly after installation (no more "model not found" on startup).
 
 
